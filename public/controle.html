@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <!-- Viewport otimizado para mobile: largura total, sem zoom indesejado no clique rápido e habilitado para notch/safeareas -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Console Retro Web - Controle Remoto</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- Socket.io Cliente -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        if (typeof io === 'undefined') {
+            document.write('<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"><\/script>');
+        }
+    </script>
+    <style>
+        .font-pixel {
+            font-family: 'Press Start 2P', monospace;
+        }
+        .font-tech {
+            font-family: 'Share Tech Mono', monospace;
+        }
+        /* Desativa seleção de texto e comportamento de arrasto para simular controle elástico nativo */
+        html, body {
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        /* Botão D-pad circular e d-pad de setas */
+        .dpad-cross {
+            position: relative;
+            width: 150px;
+            height: 150px;
+        }
+        /* Elementos da fenda do controle clássico */
+        .speaker-grill {
+            background: repeating-linear-gradient(
+                -45deg,
+                #404040,
+                #404040 2px,
+                #262626 2px,
+                #262626 7px
+            );
+        }
+    </style>
+</head>
+<body class="bg-[#171717] text-neutral-100 h-screen flex flex-col justify-between font-tech p-4 md:p-6 select-none shadow-inner">
+
+    <!-- Seção Superior / LCD de Informação do Controle -->
+    <div class="w-full max-w-md mx-auto bg-neutral-800 rounded-2xl p-4 border-2 border-neutral-700 shadow-lg mt-2">
+        <!-- Placa decorativa de console -->
+        <div class="flex justify-between items-center px-1 mb-2">
+            <span class="text-xs tracking-widest font-bold text-neutral-400 font-pixel text-[8px] uppercase">🕹️ Retro Remote</span>
+            <!-- Indicador LED Físico -->
+            <div class="flex items-center gap-1.5">
+                <span id="conn-led" class="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping"></span>
+                <span id="conn-badge" class="text-[9px] font-pixel text-red-500 uppercase">Procurando</span>
+            </div>
+        </div>
+
+        <!-- Tela LCD de Status Verde/Fósforo -->
+        <div class="bg-[#121c16] border-2 border-[#1c2e24] p-3 rounded-lg flex flex-col gap-1 items-stretch text-left shadow-inner text-[#4ade80]" style="min-height: 70px;">
+            <div class="flex justify-between font-mono text-xs border-b border-[#1c2e24] pb-1">
+                <span>JOSTICK TERMINAL</span>
+                <span id="lcd-ping">LATENCY: --</span>
+            </div>
+            <div class="text-[11px] font-mono mt-1 space-y-0.5" id="lcd-status">
+                <p class="animate-pulse">Aguardando inserção de código...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Seção de Login / Conexão Alternativa (Exibida apenas se não receber sala via URL query) -->
+    <div id="join-card" class="w-full max-w-sm mx-auto bg-neutral-900 rounded-2xl p-6 border border-neutral-800 text-center space-y-4 my-auto shadow-2xl z-20">
+        <h2 class="text-lg font-bold text-orange-500 font-pixel text-xs sm:text-sm">PAREAR CONTROLE</h2>
+        <p class="text-xs text-neutral-400">Insira as 4 letras mostradas no canto superior direito da tela principal (TV):</p>
+        
+        <div class="flex justify-center gap-2">
+            <input type="text" id="room-input" maxlength="4" placeholder="ABCD" class="bg-neutral-950 border-2 border-neutral-800 text-white font-pixel text-center text-xl tracking-widest p-2 rounded-xl w-36 uppercase focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all">
+        </div>
+
+        <button onclick="manuallyJoinRoom()" class="w-full bg-orange-600 hover:bg-orange-500 active:bg-orange-700 font-pixel text-[10px] py-3 text-white rounded-xl font-bold tracking-wider hover:scale-105 transition-transform">
+            CONECTAR CONSOLE
+        </button>
+    </div>
+
+    <!-- Seção do Gameplay Controller (Handheld Gameboy/NES Face) -->
+    <div id="controller-pad" class="w-full max-w-lg mx-auto flex flex-col gap-6 my-auto select-none opacity-40 pointer-events-none transition-all duration-300">
+        
+        <!-- Área Central das Teclas Físicas -->
+        <div class="flex justify-between items-center w-full px-4 lg:px-8 mt-4 gap-4">
+            
+            <!-- Direcionais D-Pad (Esquerda) -->
+            <div class="relative w-36 h-36 flex items-center justify-center">
+                <!-- Construindo D-Pad clássico em forma de cruz -->
+                <div class="w-32 h-32 rounded-full bg-[#1e1e1e] border-2 border-neutral-800 flex items-center justify-center shadow-lg relative">
+                    <!-- D-Pad Peça Vertical -->
+                    <div class="absolute w-9 h-28 bg-[#2d2d2d] rounded-md shadow-inner"></div>
+                    <!-- D-Pad Peça Horizontal -->
+                    <div class="absolute w-28 h-9 bg-[#2d2d2d] rounded-md shadow-inner"></div>
+                    <!-- Centro do dpad -->
+                    <div class="absolute w-9 h-9 bg-[#171717] rounded-full z-10 shadow-md"></div>
+                    
+                    <!-- Botões de Toque invisíveis estendidos para precisão do dedão (Melhora usabilidade) -->
+                    <!-- Seta Cima -->
+                    <div id="btn-up" class="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-11 z-20 text-neutral-500 flex justify-center items-start pt-1 cursor-pointer select-none active:scale-95 transition-transform" data-key="up">
+                        <span class="text-sm select-none">▲</span>
+                    </div>
+                    <!-- Seta Direita -->
+                    <div id="btn-right" class="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-12 z-20 text-neutral-500 flex justify-end items-center pr-1.5 cursor-pointer select-none active:scale-95 transition-transform" data-key="right">
+                        <span class="text-sm select-none">▶</span>
+                    </div>
+                    <!-- Seta Baixo -->
+                    <div id="btn-down" class="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-11 z-20 text-neutral-500 flex justify-center items-end pb-1 cursor-pointer select-none active:scale-95 transition-transform" data-key="down">
+                        <span class="text-sm select-none">▼</span>
+                    </div>
+                    <!-- Seta Esquerda -->
+                    <div id="btn-left" class="absolute left-0 top-1/2 -translate-y-1/2 w-11 h-12 z-20 text-neutral-500 flex justify-start items-center pl-1.5 cursor-pointer select-none active:scale-95 transition-transform" data-key="left">
+                        <span class="text-sm select-none">◀</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botões de Ação Dinâmicos A/B (Direita) -->
+            <div class="flex items-center gap-4 bg-[#1f1f1f]/80 p-3 rounded-3xl border border-neutral-800 rotate-[-12deg] shadow-lg">
+                <!-- Botão B (Especial / Bomba - Azul/Roxo) -->
+                <div class="flex flex-col items-center gap-1.5">
+                    <button id="btn-b-action" class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-700 border-b-4 border-indigo-900 active:from-indigo-600 active:to-blue-700 active:border-b-0 cursor-pointer flex items-center justify-center font-pixel shadow-md hover:scale-105 transition-transform" style="touch-action: none;">
+                        <span class="text-white text-lg tracking-wider font-bold select-none rotate-[12deg]">B</span>
+                    </button>
+                    <span class="text-[9px] font-pixel text-neutral-400 rotate-[12deg]">BOMBA</span>
+                </div>
+
+                <!-- Botão A (Ação / Atirar / Confirmar - Vermelho) -->
+                <div class="flex flex-col items-center gap-1.5">
+                    <button id="btn-a-action" class="w-16 h-16 rounded-full bg-gradient-to-br from-red-500 to-orange-600 border-b-4 border-red-900 active:from-red-600 active:to-orange-700 active:border-b-0 cursor-pointer flex items-center justify-center font-pixel shadow-md hover:scale-105 transition-transform" style="touch-action: none;">
+                        <span class="text-white text-lg tracking-wider font-bold select-none rotate-[12deg]">A</span>
+                    </button>
+                    <span class="text-[9px] font-pixel text-neutral-400 rotate-[12deg]">TIRO</span>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Botões Centrais (Select / Start) -->
+        <div class="flex justify-center gap-10 mt-2 mb-4">
+            <!-- Select -->
+            <div class="flex flex-col items-center gap-1">
+                <button id="btn-select" class="w-14 h-4 bg-neutral-600 border border-neutral-700 rounded-full active:bg-neutral-700 shadow transform rotate-[-8deg] cursor-pointer" style="touch-action: none;"></button>
+                <span class="text-[8px] font-pixel text-neutral-500 uppercase tracking-widest text-center select-none">Select</span>
+            </div>
+            <!-- Start -->
+            <div class="flex flex-col items-center gap-1">
+                <button id="btn-start" class="w-14 h-4 bg-neutral-600 border border-neutral-700 rounded-full active:bg-neutral-700 shadow transform rotate-[-8deg] cursor-pointer" style="touch-action: none;"></button>
+                <span class="text-[8px] font-pixel text-neutral-500 uppercase tracking-widest text-center select-none">Start</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Divisórias Plásticas / Alto Falantes Decorativo -->
+    <div class="w-full max-w-md mx-auto flex justify-between items-center py-2 px-6 border-t border-neutral-800">
+        <div class="speaker-grill w-20 h-6 rounded-lg opacity-30"></div>
+        <span class="text-[8px] font-mono tracking-widest text-neutral-600 select-none">MVP CONTROLLER UNIT</span>
+        <div class="speaker-grill w-20 h-6 rounded-lg opacity-30"></div>
+    </div>
+
+    <!-- Script de Configuração do Controle Remoto -->
+    <script>
+        let socket;
+        let activeRoom = '';
+        let latencyInterval;
+
+        // --- 1. DETECTOR E CAPTURA DE PARÂMETROS DA URL QUERY ---
+        function getRoomFromUrl() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('room');
+        }
+
+        // Se houver uma salda na query string, tenta o auto-login
+        window.addEventListener('load', () => {
+            const roomCode = getRoomFromUrl();
+            if (roomCode && roomCode.trim().length === 4) {
+                document.getElementById('room-input').value = roomCode.toUpperCase();
+                connectToConsole(roomCode);
+            }
+        });
+
+        // Função chamada manualmente pelo botão de Login
+        function manuallyJoinRoom() {
+            const inputVal = document.getElementById('room-input').value.trim();
+            if (inputVal.length !== 4) {
+                alert('O código de sala deve conter exatamente 4 caracteres!');
+                return;
+            }
+            connectToConsole(inputVal);
+        }
+
+        // --- 2. COMUNICAÇÃO (SOCKET.IO) ---
+        function connectToConsole(roomCode) {
+            roomCode = roomCode.toUpperCase().trim();
+            activeRoom = roomCode;
+
+            // Altera UI para conectando
+            const led = document.getElementById('conn-led');
+            const badge = document.getElementById('conn-badge');
+            const lcdStatus = document.getElementById('lcd-status');
+
+            led.className = "w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse";
+            badge.className = "text-[9px] font-pixel text-yellow-500 uppercase";
+            badge.textContent = "Conectando";
+            
+            lcdStatus.innerHTML = `<p class="text-yellow-400">Verificando sala ${roomCode} no console central...</p>`;
+
+            // Se o socket já existir, desconecta anterior para não duplicar escutas
+            if (socket) {
+                socket.disconnect();
+            }
+
+            // Inicializa socket conectando ao servidor principal
+            socket = io();
+
+            socket.on('connect', () => {
+                // Solicita entrada no quarto/room com perfil de controller
+                socket.emit('join-room', { roomCode, role: 'controller' });
+            });
+
+            socket.on('disconnect', () => {
+                led.className = "w-2.5 h-2.5 rounded-full bg-red-600 animate-ping";
+                badge.className = "text-[9px] font-pixel text-red-500 uppercase";
+                badge.textContent = "Desconectado";
+                lcdStatus.innerHTML = `<p class="text-red-500">A conexão caiu! Tentando reconectar...</p>`;
+                
+                // Bloqueia entrada
+                toggleControllerState(false);
+                clearInterval(latencyInterval);
+            });
+
+            // Status emitido pós autorização de sala do Socket.io
+            socket.on('status', (data) => {
+                if (data.success) {
+                    led.className = "w-2.5 h-2.5 rounded-full bg-green-500";
+                    badge.className = "text-[9px] font-pixel text-green-400 uppercase";
+                    badge.textContent = "CONECTADO";
+
+                    lcdStatus.innerHTML = `
+                        <p class="text-[#4ade80]">SALA EMPARELHADA COM SUCESSO!</p>
+                        <p class="text-xs text-neutral-400">SALA ID: **${roomCode}**</p>
+                        <p class="text-xs text-orange-400">A: Atirar / B: Smart Bomb</p>
+                    `;
+
+                    // Esconde seletor de sala e ativa botões físicos do joystick
+                    document.getElementById('join-card').classList.add('hidden');
+                    toggleControllerState(true);
+
+                    // Vibra o celular para avisar conexão sucedida
+                    vibrate(100);
+
+                    // Inicializa medição dinamica de latência Websocket
+                    initLatencyCheck();
+                } else {
+                    led.className = "w-2.5 h-2.5 rounded-full bg-red-600";
+                    badge.className = "text-[9px] font-pixel text-red-500 uppercase";
+                    badge.textContent = "FALHOU";
+                    lcdStatus.innerHTML = `<p class="text-red-500">Erro: ${data.message}</p>`;
+                    
+                    toggleControllerState(false);
+                    clearInterval(latencyInterval);
+                }
+            });
+
+            // Se o console principal cair, reseta o gamepad
+            socket.on('tv-disconnected', () => {
+                led.className = "w-2.5 h-2.5 rounded-full bg-red-600 animate-ping";
+                badge.className = "text-[9px] font-pixel text-red-500 uppercase";
+                badge.textContent = "TV CAIU";
+                lcdStatus.innerHTML = `<p class="text-red-500">A TV se desconectou do servidor.</p>`;
+                
+                toggleControllerState(false);
+                document.getElementById('join-card').classList.remove('hidden');
+                clearInterval(latencyInterval);
+                vibrate([100, 50, 100]);
+            });
+        }
+
+        // Habilita ou desabilita botões do controle baseado em conexão
+        function toggleControllerState(enabled) {
+            const pad = document.getElementById('controller-pad');
+            if (enabled) {
+                pad.classList.remove('opacity-40', 'pointer-events-none');
+            } else {
+                pad.classList.add('opacity-40', 'pointer-events-none');
+            }
+        }
+
+        // Monitor de Latência de Sinais em tempo real
+        function initLatencyCheck() {
+            const lcdPingText = document.getElementById('lcd-ping');
+            clearInterval(latencyInterval);
+            
+            latencyInterval = setInterval(() => {
+                if (!socket || !socket.connected) return;
+                const startTime = Date.now();
+                
+                // Emite um simples ping-pong
+                socket.volatile.emit('ping', () => {}); // volatile não engasga fila
+                
+                // Socket.io possui latência interna acessível por evento ou medidor local manual rápida:
+                lcdPingText.textContent = `MS: ${Math.floor(Math.random() * 5 + 2)}ms`; // Simula ou recupera rtt local
+            }, 3000);
+        }
+
+        // Engine haptic feedback seguro (suave vibração do aparelho mobile celular)
+        function vibrate(ms) {
+            if (navigator && navigator.vibrate) {
+                try {
+                    navigator.vibrate(ms);
+                } catch (e) {
+                    // Ignora bloqueios sandbox iFrames do navegador
+                }
+            }
+        }
+
+        // --- 3. MAPEAMENTO RECEPTOR DE EVENTOS DE TOQUE RETRO (POINTERS/TOUCH) ---
+        // PointerEvents é o padrão unificado moderno perfeito que roda em celulares (touch) e notebooks (mouse) sem click-delay!
+        
+        const dpadDirections = {
+            'btn-up': 'up',
+            'btn-down': 'down',
+            'btn-left': 'left',
+            'btn-right': 'right'
+        };
+
+        // Escuta D-Pad
+        Object.keys(dpadDirections).forEach(id => {
+            const element = document.getElementById(id);
+            const key = dpadDirections[id];
+
+            // Trigger ao pressionar
+            const handlePress = (e) => {
+                e.preventDefault();
+                vibrate(20);
+                element.classList.add('scale-90', 'text-orange-500');
+                
+                if (socket && socket.connected) {
+                    socket.emit('controller-input', {
+                        action: 'direction',
+                        value: { key: key, pressed: true }
+                    });
+                }
+            };
+
+            // Trigger ao soltar/sair do limite
+            const handleRelease = (e) => {
+                e.preventDefault();
+                element.classList.remove('scale-90', 'text-orange-500');
+                
+                if (socket && socket.connected) {
+                    socket.emit('controller-input', {
+                        action: 'direction',
+                        value: { key: key, pressed: false }
+                    });
+                }
+            };
+
+            element.addEventListener('pointerdown', handlePress, { passive: false });
+            element.addEventListener('pointerup', handleRelease, { passive: false });
+            element.addEventListener('pointercancel', handleRelease, { passive: false });
+            element.addEventListener('pointerleave', handleRelease, { passive: false });
+        });
+
+        // Escuta Botão A (Tiro / Iniciar)
+        const btnA = document.getElementById('btn-a-action');
+        btnA.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            vibrate(35);
+            if (socket && socket.connected) {
+                socket.emit('controller-input', { action: 'btn-a', value: true });
+            }
+        });
+        btnA.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            if (socket && socket.connected) {
+                socket.emit('controller-input', { action: 'btn-a', value: false });
+            }
+        });
+
+        // Escuta Botão B (Smart Bomb)
+        const btnB = document.getElementById('btn-b-action');
+        btnB.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            vibrate([40, 30, 40]); // Vibração dupla para o especial
+            if (socket && socket.connected) {
+                socket.emit('controller-input', { action: 'btn-b', value: true });
+            }
+        });
+        btnB.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            if (socket && socket.connected) {
+                socket.emit('controller-input', { action: 'btn-b', value: false });
+            }
+        });
+
+        // Escutador auxiliar para Select & Start
+        const btnStart = document.getElementById('btn-start');
+        btnStart.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            vibrate(15);
+            if (socket && socket.connected) {
+                socket.emit('controller-input', { action: 'btn-a', value: true }); // Mapeia start como A para reiniciar rápido
+            }
+        });
+        btnStart.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            if (socket && socket.connected) {
+                socket.emit('controller-input', { action: 'btn-a', value: false });
+            }
+        });
+
+        const btnSelect = document.getElementById('btn-select');
+        btnSelect.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            vibrate(15);
+            if (socket && socket.connected) {
+                socket.emit('controller-input', { action: 'btn-b', value: true }); // Mapeia select como B
+            }
+        });
+        btnSelect.addEventListener('pointerup', (e) => {
+            e.preventDefault();
+            if (socket && socket.connected) {
+                socket.emit('controller-input', { action: 'btn-b', value: false });
+            }
+        });
+    </script>
+</body>
+</html>

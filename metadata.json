@@ -1,0 +1,6 @@
+{
+  "name": "Web Retro Console",
+  "description": "An MVP retro game console where a main screen displays the game and a QR code, which opens a synced real-time mobile gamepad controller via WebSockets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

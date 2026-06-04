@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Console Retro Web - TV Screen</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Press Start 2P Google Font para Visual Retro/Pixelado -->
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- QRCode.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <!-- Socket.io Cliente -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Fallback para CDN caso o arquivo local não seja resolvido
+        if (typeof io === 'undefined') {
+            document.write('<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"><\/script>');
+        }
+    </script>
+    <style>
+        .font-pixel {
+            font-family: 'Press Start 2P', monospace;
+        }
+        .font-tech {
+            font-family: 'Share Tech Mono', monospace;
+        }
+        /* Scanline Overlay retro */
+        .scanlines {
+            position: relative;
+            overflow: hidden;
+        }
+        .scanlines::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 10;
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+        }
+        /* CRT Glow effect */
+        .crt-glow {
+            box-shadow: 0 0 30px rgba(244, 63, 14, 0.25), inset 0 0 20px rgba(0, 0, 0, 0.8);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between overflow-x-hidden p-4 font-tech selection:bg-orange-600 selection:text-white">
+
+    <!-- Header -->
+    <header class="w-full max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center py-2 px-4 border-b border-orange-500/20 gap-3">
+        <div class="flex items-center gap-3">
+            <span class="text-orange-500 text-2xl">🕹️</span>
+            <div>
+                <h1 class="text-xl font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500 font-pixel text-xs sm:text-sm">NEVO retro_console</h1>
+                <p class="text-xs text-slate-400 font-mono tracking-tight">COMUNICAÇÃO MULTIPLAYER REAL-TIME COM SOCKET.IO</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-4">
+            <div id="status-badge" class="flex items-center gap-2 bg-yellow-950/40 border border-yellow-800/40 px-3 py-1 rounded-full text-xs text-yellow-400 animate-pulse">
+                <span class="w-2.5 h-2.5 bg-yellow-500 rounded-full"></span>
+                <span id="status-text">Iniciando Servidor...</span>
+            </div>
+            <div class="text-xs font-mono text-slate-400 bg-slate-900 border border-slate-800 px-3 py-1 rounded">
+                SALA: <span id="room-display" class="font-bold text-orange-400 font-pixel">----</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Section -->
+    <main class="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 my-auto items-center py-6">
+        
+        <!-- Bloco do Canvas de Jogo (Esquerda/Centro) -->
+        <div class="lg:col-span-8 flex flex-col items-center">
+            <!-- Gabinete Retro Bezel -->
+            <div class="w-full max-w-3xl bg-neutral-900 p-4 sm:p-6 rounded-3xl border-4 border-neutral-800 crt-glow shadow-2xl relative">
+                <!-- Luzes do gabinete -->
+                <div class="absolute -top-1 left-1/4 w-12 h-2.5 bg-red-600 rounded-full blur-[2px]"></div>
+                <div class="absolute -top-1 right-1/4 w-12 h-2.5 bg-orange-500 rounded-full blur-[2px]"></div>
+                
+                <!-- Tela CRT -->
+                <div class="scanlines rounded-lg overflow-hidden border-2 border-slate-950 bg-black aspect-[4/3] relative flex items-center justify-center">
+                    <canvas id="gameCanvas" width="800" height="600" class="w-full h-full block bg-slate-950"></canvas>
+                </div>
+
+                <!-- Painel de Controles Físicos Decorações (Anti-AI slop, clean style placeholders) -->
+                <div class="mt-4 flex justify-between items-center text-xs text-slate-500 font-mono px-2">
+                    <div>NEO_SYSTEM_V1.0</div>
+                    <div class="flex gap-2">
+                        <span class="w-3 h-3 rounded-full bg-red-600 inline-block animate-ping"></span>
+                        <span>CANVAS RES: 800x600</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bloco do QR Code e Instruções (Direita) -->
+        <div class="lg:col-span-4 flex flex-col justify-center gap-6">
+            
+            <!-- Card de Conexão -->
+            <div class="bg-slate-900/80 border border-orange-500/30 rounded-2xl p-6 shadow-xl relative backdrop-blur-md">
+                <div class="absolute -top-3 left-6 bg-orange-500 text-black font-semibold text-xs px-3 py-1 rounded font-pixel uppercase">
+                    Passo 1: Conecte o Celular
+                </div>
+                
+                <h3 class="text-lg font-bold text-slate-100 mt-2 mb-4">Como jogar:</h3>
+                
+                <!-- Container de Instruções e QR Code -->
+                <div class="flex flex-col items-center gap-5 text-center">
+                    <!-- QR Code Frame com efeito neon -->
+                    <div class="p-4 bg-white rounded-xl shadow-lg relative cursor-pointer group hover:scale-105 transition-transform duration-300">
+                        <div id="qrcode" class="w-44 h-44 flex items-center justify-center bg-gray-100">
+                            <!-- Spinner de carregamento do QR Code -->
+                            <div class="animate-spin rounded-full h-10 w-10 border-4 border-orange-500 border-t-transparent"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="w-full text-center">
+                        <p class="text-sm font-mono text-slate-300">Escaneie o QR Code acima ou acesse pelo celular:</p>
+                        <!-- Link amigável para copiar ou escrever no celular -->
+                        <div class="mt-2 p-2 bg-slate-950 border border-slate-800 rounded font-mono text-xs select-all text-orange-400 break-all select-all hover:bg-black transition-colors" id="link-direct">
+                            Carregando link...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card de Explicação técnica de rede / Wi-Fi (Super útil para o celular rodar na mesma rede!) -->
+            <div class="bg-slate-900/40 border border-slate-800 rounded-xl p-5 text-xs text-slate-400 space-y-3">
+                <h4 class="font-bold text-slate-200 uppercase font-pixel tracking-wide text-[10px] text-orange-500">💡 Dica de Rede Local:</h4>
+                <p>Se você estiver testando localmente com o celular:</p>
+                <ol class="list-decimal list-inside space-y-1.5 font-mono text-[11px]">
+                    <li>Certifique-se de que o PC e o celular estão no <strong class="text-slate-200">mesmo Wi-Fi</strong>.</li>
+                    <li>Utilize o endereço IP do seu PC na rede (ex: <code class="text-orange-400 text-xs">192.168.1.50:3000</code>) ao invés de localhost!</li>
+                </ol>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="w-full max-w-6xl mx-auto py-3 text-center border-t border-slate-800 text-xs text-slate-500 font-mono">
+        Web Retro Console MVP &copy; 2026. Desenvolvido com Express, Socket.io, HTML5 Canvas e Web Audio Synth APIs.
+    </footer>
+
+    <!-- Script Geral de Jogo e Comunicação -->
+    <script>
+        // --- 1. CONFIGURAÇÕES INICIAIS DE REDE ---
+        let socket;
+        let roomCode = generateRoomCode();
+        let controllerConnected = false;
+        
+        // Exibe o código da sala na interface
+        document.getElementById('room-display').textContent = roomCode;
+
+        // Gera código de sala amigável dinâmico com 4 letras
+        function generateRoomCode() {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Sem O/0 e I/1 para evitar enganos
+            let code = '';
+            for (let i = 0; i < 4; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return code;
+        }
+
+        // --- 2. COMUNICAÇÃO (SOCKET.IO) ---
+        function initSocket() {
+            socket = io();
+
+            const statusBadge = document.getElementById('status-badge');
+            const statusText = document.getElementById('status-text');
+
+            socket.on('connect', () => {
+                statusBadge.className = "flex items-center gap-2 bg-green-950/40 border border-green-800/40 px-3 py-1 rounded-full text-xs text-green-400";
+                statusText.textContent = "Servidor Online";
+                
+                // Entra na sala como TV
+                socket.emit('join-room', { roomCode, role: 'tv' });
+            });
+
+            socket.on('disconnect', () => {
+                statusBadge.className = "flex items-center gap-2 bg-red-950/40 border border-red-800/40 px-3 py-1 rounded-full text-xs text-red-400";
+                statusText.textContent = "Desconectado";
+                controllerConnected = false;
+                updateGameOverlay();
+            });
+
+            // Status emitido pelo servidor
+            socket.on('status', (data) => {
+                console.log('[Server Status]', data.message);
+            });
+
+            // Quando o controle se conecta com sucesso à sala
+            socket.on('controller-connected', (data) => {
+                controllerConnected = true;
+                statusBadge.className = "flex items-center gap-2 bg-blue-950/40 border border-blue-800/40 px-3 py-1 rounded-full text-xs text-blue-400";
+                statusText.textContent = "Controle Conectado!";
+                
+                audio.playStart(); // Toca som de inicialização retro
+                updateGameOverlay();
+            });
+
+            // Quando o controle se desconecta
+            socket.on('controller-disconnected', (data) => {
+                controllerConnected = false;
+                statusBadge.className = "flex items-center gap-2 bg-green-950/40 border border-green-800/40 px-3 py-1 rounded-full text-xs text-green-400";
+                statusText.textContent = "Servidor Online (Wating Client)";
+                
+                audio.playGameOver(); // Som triste retro
+                updateGameOverlay();
+            });
+
+            // Repasse de comandos das teclas / botões do controle remoto
+            socket.on('controller-event', (data) => {
+                const action = data.action;
+                const value = data.value;
+
+                console.log(`[Input] Ação: ${action}, Valor:`, value);
+
+                // Mapeia comandos e altera o estado do joystick do jogador
+                if (action === 'move') {
+                    // Espera algo como { x: -1, y: 0 } etc.
+                    playerInput.x = parseFloat(value.x || 0);
+                    playerInput.y = parseFloat(value.y || 0);
+                } else if (action === 'btn-a') {
+                    // Botão A pressionado/solto
+                    playerInput.fire = value; // true/false
+                    if (value && gameState === 'PLAYING') {
+                        shootBullet();
+                    } else if (value && (gameState === 'LOBBY' || gameState === 'GAME_OVER')) {
+                        startGame();
+                    }
+                } else if (action === 'btn-b') {
+                    // Botão B pressionado/solto
+                    if (value && gameState === 'PLAYING') {
+                        triggerSmartBomb();
+                    }
+                } else if (action === 'direction') {
+                    // Mapeamento alternativo de setas individuais (action === 'direction', value: { key: 'up', pressed: true })
+                    const key = value.key; // 'up', 'down', 'left', 'right'
+                    const pressed = value.pressed; // true ou false
+                    if (key === 'up') keys.up = pressed;
+                    if (key === 'down') keys.down = pressed;
+                    if (key === 'left') keys.left = pressed;
+                    if (key === 'right') keys.right = pressed;
+                }
+            });
+        }
+
+        // --- 3. GERAÇÃO DE QR CODE DINÂMICO ---
+        async function setupQRCodeAndLinks() {
+            let baseUrl = window.location.origin;
+
+            // Tenta obter o IP real ou rota de tunelamento injetada nas variáveis de ambiente
+            try {
+                const res = await fetch('/api/config');
+                const config = await res.json();
+                if (config.appUrl) {
+                    baseUrl = config.appUrl;
+                }
+            } catch (err) {
+                console.warn('[Rede] Não foi possível carregar a configuração estática, usando window.location.origin por padrão.');
+            }
+
+            // URL completa apontando para a interface do Joystick mobile com a sala acoplada
+            const targetControllerUrl = `${baseUrl}/controle.html?room=${roomCode}`;
+
+            // Limpa o spinner e renderiza o QR Code
+            const qrContainer = document.getElementById('qrcode');
+            qrContainer.innerHTML = ''; // Limpa o spinner
+            
+            new QRCode(qrContainer, {
+                text: targetControllerUrl,
+                width: 176,
+                height: 176,
+                colorDark: "#0f172a", // Text color slate-900
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            // Atualiza o link textual de atalho
+            const directLinkDiv = document.getElementById('link-direct');
+            directLinkDiv.textContent = targetControllerUrl;
+        }
+
+        // --- 4. ENGINE DE SINTETIZADOR DE ÁUDIO RETRO (Web Audio API) ---
+        class RetroAudioEngine {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            // Som de Laser (Pew pew!)
+            playZap() {
+                this.init();
+                if (!this.ctx) return;
+                
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(880, this.ctx.currentTime);
+                // Sweep de frequência descendente rápido
+                osc.frequency.setValueAtTime(880, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(110, this.ctx.currentTime + 0.15);
+                
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.15);
+            }
+
+            // Som de Explosão (Cabum!)
+            playBoom() {
+                this.init();
+                if (!this.ctx) return;
+
+                // Cria ruído branco artificial usando buffers
+                const bufferSize = this.ctx.sampleRate * 0.3; // 300ms de explosão
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+
+                // Filtro passa-baixa para dar peso de gravidade à explosão
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(1000, this.ctx.currentTime);
+                filter.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.3);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                noise.start();
+                noise.stop(this.ctx.currentTime + 0.3);
+            }
+
+            // Som de Moedas (Gemas coletadas)
+            playCoin() {
+                this.init();
+                if (!this.ctx) return;
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sine';
+                // Som curto de dois tons clássicos do NES
+                osc.frequency.setValueAtTime(523, this.ctx.currentTime); // C5
+                osc.frequency.setValueAtTime(659, this.ctx.currentTime + 0.08); // E5
+
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.2);
+            }
+
+            // Inicialização / Sucesso
+            playStart() {
+                this.init();
+                if (!this.ctx) return;
+
+                const notes = [261, 329, 392, 523, 659]; // Acorde Maior de Dó: C4 E4 G4 C5 E5
+                notes.forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime + (idx * 0.06));
+
+                    gain.gain.setValueAtTime(0.12, this.ctx.currentTime + (idx * 0.06));
+                    gain.gain.linearRampToValueAtTime(0.005, this.ctx.currentTime + (idx * 0.06) + 0.25);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(this.ctx.currentTime + (idx * 0.06));
+                    osc.stop(this.ctx.currentTime + (idx * 0.06) + 0.25);
+                });
+            }
+
+            // Fim de Jogo (Sad tune)
+            playGameOver() {
+                this.init();
+                if (!this.ctx) return;
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+                osc.frequency.linearRampToValueAtTime(80, this.ctx.currentTime + 0.5);
+
+                gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.5);
+            }
+
+            // Som da Bomba Inteligente (Smart bomb explode!)
+            playSuperBomb() {
+                this.init();
+                if (!this.ctx) return;
+
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(40, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(2200, this.ctx.currentTime + 0.6);
+
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.6);
+
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.6);
+            }
+        }
+
+        const audio = new RetroAudioEngine();
+
+        // --- 5. MECÂNICA DO JOGO NO <CANVAS> ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Estados do jogo
+        const STATE = {
+            LOBBY: 'LOBBY',
+            PLAYING: 'PLAYING',
+            GAME_OVER: 'GAME_OVER'
+        };
+        let gameState = STATE.LOBBY;
+
+        // Controle de Teclas de entrada sincronizadas
+        const keys = { up: false, down: false, left: false, right: false };
+        const playerInput = { x: 0, y: 0, fire: false }; // joystick analógico/toques direcionais remotos
+
+        // Parâmetros do Jogador
+        const player = {
+            x: 400,
+            y: 480,
+            width: 32,
+            height: 32,
+            speed: 6,
+            color: '#f97316', // Laranja-500
+            score: 0,
+            lives: 3,
+            bombs: 2,
+            shieldActive: false,
+            shieldDuration: 0
+        };
+
+        // Coleção de Objetos em cena
+        let bullets = [];
+        let asteroids = [];
+        let gems = [];
+        let stars = []; // Estrelas para efeito de fundo paralaxe
+
+        // Inicializa estrelas de fundo estáticas e em movimento
+        function initStars() {
+            stars = [];
+            for (let i = 0; i < 60; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 2 + 1,
+                    speed: Math.random() * 3 + 1,
+                    color: `hsla(${200 + Math.random() * 40}, 100%, 80%, ${Math.random() * 0.5 + 0.3})`
+                });
+            }
+        }
+
+        // Inicia e reinicia a partida
+        function startGame() {
+            player.x = canvas.width / 2;
+            player.y = canvas.height - 100;
+            player.score = 0;
+            player.lives = 3;
+            player.bombs = 2;
+            player.shieldActive = true;
+            player.shieldDuration = 120; // 2 segundos invulnerável ao nascer
+
+            bullets = [];
+            asteroids = [];
+            gems = [];
+            
+            gameState = STATE.PLAYING;
+            audio.playStart();
+        }
+
+        // Cria disparo do Laser do player
+        function shootBullet() {
+            // Limita a cadência de tiro rápida (máximo 4 simultâneos na tela de uma vez)
+            if (bullets.length >= 4) return;
+            
+            bullets.push({
+                x: player.x,
+                y: player.y - 10,
+                radius: 4,
+                speed: 10,
+                color: '#ef4444' // Vermelho neon
+            });
+            audio.playZap();
+        }
+
+        // Bomba Inteligente (Apaga os inimigos da tela e salva a vida do jogador)
+        function triggerSmartBomb() {
+            if (player.bombs <= 0) return;
+            
+            player.bombs--;
+            audio.playSuperBomb();
+            
+            // Cria um efeito visual de onda de choque e dá pontos por todos eliminados
+            asteroids.forEach(ast => {
+                player.score += 5; // Recompensado pela eliminação
+            });
+            asteroids = [];
+        }
+
+        // Spawns dinâmicos de asteroides e joias pontuadoras
+        let spawnTimer = 0;
+        let gemSpawnTimer = 0;
+
+        function updateSpawns() {
+            spawnTimer++;
+            gemSpawnTimer++;
+
+            // Dificuldade com base na pontuação atual
+            const difficultyMultiplier = Math.min(2, 1 + player.score / 200);
+            
+            // Spawn de asteroides (frequência baseada em dificuldade)
+            const spawnRate = Math.max(15, 40 - Math.floor(player.score / 50));
+            if (spawnTimer >= spawnRate) {
+                spawnTimer = 0;
+                asteroids.push({
+                    x: Math.random() * (canvas.width - 40) + 20,
+                    y: -30,
+                    radius: Math.random() * 20 + 12,
+                    speed: (Math.random() * 3 + 2.5) * difficultyMultiplier,
+                    rotation: 0,
+                    rotSpeed: Math.random() * 0.05 - 0.025,
+                    color: `hsl(${15 + Math.random() * 15}, 60%, ${30 + Math.random() * 20}%)`
+                });
+            }
+
+            // Spawn de Gemas vermelhas ou azuis para coletar
+            if (gemSpawnTimer >= 180) { // a cada 3 segundos
+                gemSpawnTimer = 0;
+                gems.push({
+                    x: Math.random() * (canvas.width - 32) + 16,
+                    y: -20,
+                    width: 14,
+                    height: 14,
+                    speed: 2.5,
+                    type: Math.random() > 0.3 ? 'normal' : 'powerup', // normal=amarela ou powerup=azul/roxa
+                    color: Math.random() > 0.3 ? '#eab308' : '#a855f7' // Gold ou Purple
+                });
+            }
+        }
+
+        // Atualização matemática da físicas do jogo e limites
+        function updatePhysics() {
+            // 1. Move Estrelas de fundo
+            stars.forEach(star => {
+                star.y += star.speed;
+                if (star.y > canvas.height) {
+                    star.y = 0;
+                    star.x = Math.random() * canvas.width;
+                }
+            });
+
+            // 2. Processa movimentação do nave jogador (Suporta de forma dupla Teclas Locais e Toques pelo Celular)
+            let moveX = 0;
+            let moveY = 0;
+
+            // Se receber vindo do teclado (útil para debugar também)
+            if (keys.left) moveX = -1;
+            if (keys.right) moveX = 1;
+            if (keys.up) moveY = -1;
+            if (keys.down) moveY = 1;
+
+            // Se receber vindo do Joystick (combina ambos para maior versatilidade)
+            if (playerInput.x !== 0) moveX = playerInput.x;
+            if (playerInput.y !== 0) moveY = playerInput.y;
+
+            player.x += moveX * player.speed;
+            player.y += moveY * player.speed;
+
+            // Mantém a nave do jogador dentro da tela visível
+            if (player.x < 16) player.x = 16;
+            if (player.x > canvas.width - 16) player.x = canvas.width - 16;
+            if (player.y < 30) player.y = 30;
+            if (player.y > canvas.height - 30) player.y = canvas.height - 30;
+
+            // Atualiza escudos invulnerabilidade temporária
+            if (player.shieldActive) {
+                player.shieldDuration--;
+                if (player.shieldDuration <= 0) {
+                    player.shieldActive = false;
+                }
+            }
+
+            // 3. Move Projéteis (Balas de Laser)
+            bullets.forEach((bullet, index) => {
+                bullet.y -= bullet.speed;
+                // Remove balas fora de tela
+                if (bullet.y < -10) {
+                    bullets.splice(index, 1);
+                }
+            });
+
+            // 4. Move e Atualiza Asteroides (Inimigos)
+            asteroids.forEach((ast, astIdx) => {
+                ast.y += ast.speed;
+                ast.rotation += ast.rotSpeed;
+
+                // Colisão entre Asteroide e Bala de Laser
+                bullets.forEach((bullet, bulIdx) => {
+                    const dist = Math.hypot(bullet.x - ast.x, bullet.y - ast.y);
+                    if (dist < ast.radius + bullet.radius) {
+                        // Explode!
+                        bullets.splice(bulIdx, 1);
+                        asteroids.splice(astIdx, 1);
+                        player.score += 10;
+                        audio.playBoom();
+                    }
+                });
+
+                // Colisão entre Asteroide e Nave Jogador
+                const distToPlayer = Math.hypot(player.x - ast.x, player.y - ast.y);
+                if (distToPlayer < ast.radius + 12) {
+                    if (!player.shieldActive) {
+                        // Toma dano!
+                        player.lives--;
+                        asteroids.splice(astIdx, 1);
+                        audio.playBoom();
+                        // Escudo estantâneo de spawn após dano
+                        player.shieldActive = true;
+                        player.shieldDuration = 90; // invulnerável por 1.5s
+                        
+                        if (player.lives <= 0) {
+                            gameState = STATE.GAME_OVER;
+                            audio.playGameOver();
+                            updateGameOverlay();
+                        }
+                    }
+                }
+
+                // Remove asteroides fora de tela
+                if (ast.y > canvas.height + 40) {
+                    asteroids.splice(astIdx, 1);
+                }
+            });
+
+            // 5. Move e Atualiza Gemas Coletáveis
+            gems.forEach((gem, gemIdx) => {
+                gem.y += gem.speed;
+
+                // Colisão entre Gema e Nave Jogador
+                const distToPlayer = Math.hypot(player.x - gem.x, player.y - gem.y);
+                if (distToPlayer < 24) {
+                    gems.splice(gemIdx, 1);
+                    audio.playCoin();
+                    
+                    if (gem.type === 'normal') {
+                        player.score += 15;
+                    } else { // powerup
+                        player.score += 30;
+                        player.bombs = Math.min(4, player.bombs + 1); // Ganha bomba extra!
+                    }
+                }
+
+                // Remove gemas fora de tela
+                if (gem.y > canvas.height + 30) {
+                    gems.splice(gemIdx, 1);
+                }
+            });
+        }
+
+        // Renderização gráfica no Canvas
+        function renderScene() {
+            // Limpa canvas
+            ctx.fillStyle = '#020617'; // slate-950
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 1. Desenha Estrelas
+            stars.forEach(star => {
+                ctx.fillStyle = star.color;
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+            });
+
+            // 2. Desenha Asteroides (Inimigos)
+            asteroids.forEach(ast => {
+                ctx.save();
+                ctx.translate(ast.x, ast.y);
+                ctx.rotate(ast.rotation);
+                
+                // Desenha polígono pixelado simulando pedra espacial
+                ctx.beginPath();
+                ctx.fillStyle = ast.color;
+                ctx.strokeStyle = '#f97316'; // Linha de contorno neon
+                ctx.lineWidth = 2;
+                
+                const points = 8;
+                for (let i = 0; i < points; i++) {
+                    const angle = (i / points) * Math.PI * 2;
+                    // Variação irregular de raio para parecer aspero
+                    const rad = ast.radius * (0.8 + Math.sin(i * 3) * 0.15);
+                    const x = Math.cos(angle) * rad;
+                    const y = Math.sin(angle) * rad;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.restore();
+            });
+
+            // 3. Desenha Gemas
+            gems.forEach(gem => {
+                ctx.save();
+                ctx.translate(gem.x, gem.y);
+                
+                // Losango brilhante
+                ctx.fillStyle = gem.color;
+                ctx.beginPath();
+                ctx.moveTo(0, -gem.height / 2);
+                ctx.lineTo(gem.width / 2, 0);
+                ctx.lineTo(0, gem.height / 2);
+                ctx.lineTo(-gem.width / 2, 0);
+                ctx.closePath();
+                ctx.fill();
+
+                // Brilho central
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(-2, -2, 4, 4);
+                
+                ctx.restore();
+            });
+
+            // 4. Desenha Balas de Laser
+            bullets.forEach(bullet => {
+                ctx.fillStyle = bullet.color;
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+                ctx.fill();
+                // rastro de laser
+                ctx.strokeStyle = '#f87171';
+                ctx.beginPath();
+                ctx.moveTo(bullet.x, bullet.y);
+                ctx.lineTo(bullet.x, bullet.y + 12);
+                ctx.stroke();
+            });
+
+            // 5. Desenha Nave Jogador
+            if (gameState === STATE.PLAYING || gameState === STATE.GAME_OVER) {
+                ctx.save();
+                ctx.translate(player.x, player.y);
+
+                // Chama fogo do propulsor (efeito animado pulsante)
+                if (Math.random() > 0.3) {
+                    ctx.fillStyle = '#f97316'; // Laranja
+                    ctx.beginPath();
+                    ctx.moveTo(-6, 12);
+                    ctx.lineTo(0, 24 + Math.random() * 8);
+                    ctx.lineTo(6, 12);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    ctx.fillStyle = '#eab308'; // Amarelo interno
+                    ctx.beginPath();
+                    ctx.moveTo(-3, 12);
+                    ctx.lineTo(0, 18 + Math.random() * 4);
+                    ctx.lineTo(3, 12);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                // Corpo da Nave (Forma geométrica retro de caça espacial)
+                ctx.fillStyle = player.color;
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                
+                ctx.beginPath();
+                ctx.moveTo(0, -18);      // Bico da nave
+                ctx.lineTo(14, 12);      // Asa direita
+                ctx.lineTo(6, 8);        // Escorregamento asa
+                ctx.lineTo(0, 14);       // Traseira bico
+                ctx.lineTo(-6, 8);       // Escorregamento asa esquerda
+                ctx.lineTo(-14, 12);     // Asa esquerda
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Cabine da nave
+                ctx.fillStyle = '#38bdf8'; // Azul claro neon
+                ctx.beginPath();
+                ctx.arc(0, -2, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Desenha Anel de Escudos se estiver ativo
+                if (player.shieldActive && Math.floor(Date.now() / 100) % 2 === 0) {
+                    ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)'; // azul neon semi-transparente
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, player.width, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+
+            // 6. Desenha HUD do Jogo (Pontos, Vidas, Bombas)
+            if (gameState === STATE.PLAYING) {
+                // Placar de Pontos
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '14px "Press Start 2P"';
+                ctx.textAlign = 'left';
+                ctx.fillText(`SCORE: ${player.score}`, 20, 40);
+
+                // Desenha Vidas (Corações ou Naves pequenas)
+                ctx.textAlign = 'right';
+                ctx.fillText('LIVES: ', canvas.width - 120, 40);
+                for (let i = 0; i < player.lives; i++) {
+                    ctx.fillStyle = '#ef4444'; // vermelho
+                    ctx.fillText('❤️', canvas.width - 110 + (25 * i), 42); // Emoji de coração no texto
+                }
+
+                // Bombas inteligentes restantes
+                ctx.textAlign = 'left';
+                ctx.fillStyle = '#c084fc'; // roxo
+                ctx.fillText(`BOMBAS [B]: ${'💣 '.repeat(player.bombs)}`, 20, 75);
+            }
+        }
+
+        // Camada interativa desenhada sobre o Canvas para os menus principais (Lobby e Game Over)
+        function renderOverlays() {
+            if (gameState === STATE.LOBBY) {
+                // Desenha quadro escurecido
+                ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Título Principal
+                ctx.shadowColor = 'rgba(249, 115, 22, 0.5)';
+                ctx.shadowBlur = 15;
+                ctx.fillStyle = '#f97316';
+                ctx.font = '24px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.fillText('COSMIC DODGER', canvas.width / 2, canvas.height / 2 - 120);
+                
+                ctx.shadowBlur = 0; // Desativa glow
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '12px "Press Start 2P"';
+                ctx.fillText('CONSOLE RETRO WEB MVP', canvas.width / 2, canvas.height / 2 - 80);
+
+                // Estado da Conexão e instruções
+                if (!controllerConnected) {
+                    ctx.fillStyle = '#e2e8f0';
+                    ctx.font = '11px "Press Start 2P"';
+                    ctx.fillText('AGUARDANDO O CONTROLE REMOTO...', canvas.width / 2, canvas.height / 2);
+                    
+                    ctx.fillStyle = '#eab308';
+                    ctx.font = '10px "Press Start 2P"';
+                    // Efeito piscante sem setInterval para sincronizar perfeito com fps
+                    if (Math.floor(Date.now() / 600) % 2 === 0) {
+                        ctx.fillText('ESCANEIE O QR CODE AO LADO PARA CONECTAR', canvas.width / 2, canvas.height / 2 + 50);
+                    }
+                } else {
+                    ctx.fillStyle = '#4ade80'; // verde
+                    ctx.font = '12px "Press Start 2P"';
+                    ctx.fillText('🎮 CONTROLE RECONHECIDO!', canvas.width / 2, canvas.height / 2);
+
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '10px "Press Start 2P"';
+                    if (Math.floor(Date.now() / 400) % 2 === 0) {
+                        ctx.fillText('PRESSIONE O DISPARADOR [A] PARA JOGAR', canvas.width / 2, canvas.height / 2 + 50);
+                    }
+                }
+
+                // Créditos rodapé canvas
+                ctx.fillStyle = '#475569';
+                ctx.font = '8px "Press Start 2P"';
+                ctx.fillText('Socket.io v4.7 / HTML5 Canvas / Web Audio', canvas.width / 2, canvas.height - 40);
+
+            } else if (gameState === STATE.GAME_OVER) {
+                // Dimmer escurecido
+                ctx.fillStyle = 'rgba(22, 6, 6, 0.9)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Título
+                ctx.fillStyle = '#ef4444';
+                ctx.font = '28px "Press Start 2P"';
+                ctx.textAlign = 'center';
+                ctx.shadowColor = 'rgba(239, 68, 68, 0.5)';
+                ctx.shadowBlur = 15;
+                ctx.fillText('GAME OVER', canvas.width / 2, canvas.height / 2 - 100);
+                ctx.shadowBlur = 0;
+
+                // Score Final
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '14px "Press Start 2P"';
+                ctx.fillText(`PONTUAÇÃO FINAL: ${player.score}`, canvas.width / 2, canvas.height / 2 - 20);
+
+                // Recorde persistido em localStorage da TV para dar espírito competitivo!
+                let highScore = localStorage.getItem('retro_highscore') || 0;
+                if (player.score > highScore) {
+                    highScore = player.score;
+                    localStorage.setItem('retro_highscore', highScore);
+                    ctx.fillStyle = '#eab308'; // Ouro
+                    ctx.fillText('🏆 NOVO RECORDE LOCAL!', canvas.width / 2, canvas.height / 2 + 20);
+                } else {
+                    ctx.fillStyle = '#94a3b8';
+                    ctx.fillText(`RECORDE ATUAL: ${highScore}`, canvas.width / 2, canvas.height / 2 + 20);
+                }
+
+                // Instrução de Reinício
+                ctx.fillStyle = '#e2e8f0';
+                ctx.font = '10px "Press Start 2P"';
+                if (Math.floor(Date.now() / 400) % 2 === 0) {
+                    ctx.fillText('PRESSIONE [A] NO TELEFONE PARA REINICIAR', canvas.width / 2, canvas.height / 2 + 90);
+                }
+            }
+        }
+
+        // Força redesenho do overlay imediatamente ao alterar conexões para evitar flickering
+        function updateGameOverlay() {
+            renderScene();
+            renderOverlays();
+        }
+
+        // Loop Game Core Principal
+        function gameLoop() {
+            if (gameState === STATE.PLAYING) {
+                updateSpawns();
+                updatePhysics();
+                renderScene();
+            } else {
+                // No Lobby ou Game Over apenas move as estrelas para o efeito parallax fluído em background
+                stars.forEach(star => {
+                    star.y += star.speed * 0.2; // Move um pouco mais lento
+                    if (star.y > canvas.height) {
+                        star.y = 0;
+                        star.x = Math.random() * canvas.width;
+                    }
+                });
+                renderScene();
+                renderOverlays();
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- 6. ATALHOS TECLADO LOCAL (Para facilitar testes do desenvolvedor pela TV) ---
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = true;
+            if (e.key === 'ArrowRight' || e.key === 'd') keys.right = true;
+            if (e.key === 'ArrowUp' || e.key === 'w') keys.up = true;
+            if (e.key === 'ArrowDown' || e.key === 's') keys.down = true;
+
+            // Spacebar ou tecla 'Enter' emula Botão 'A' (Ação)
+            if (e.key === ' ' || e.key === 'Enter') {
+                if (gameState === STATE.PLAYING) {
+                    shootBullet();
+                } else if (!controllerConnected && (gameState === STATE.LOBBY || gameState === STATE.GAME_OVER)) {
+                    startGame(); // Permite jogar sem controle localmente se o desenvolvedor quiser apagar fogo
+                }
+            }
+            if (e.key === 'b') {
+                if (gameState === STATE.PLAYING) {
+                    triggerSmartBomb();
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'a') keys.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd') keys.right = false;
+            if (e.key === 'ArrowUp' || e.key === 'w') keys.up = false;
+            if (e.key === 'ArrowDown' || e.key === 's') keys.down = false;
+        });
+
+        // --- 7. EXECUTAR NA INICIALIZAÇÃO DO DOCUMENTO ---
+        window.addEventListener('load', () => {
+            initStars();
+            initSocket();
+            setupQRCodeAndLinks();
+            
+            // Inicia o renderizador
+            requestAnimationFrame(gameLoop);
+        });
+    </script>
+</body>
+</html>
