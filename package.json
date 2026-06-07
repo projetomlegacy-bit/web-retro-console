@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "build": "echo 'No build required for pure static game console'",
+    "build": "vite build",
     "preview": "node server.js",
     "clean": "rm -rf dist",
     "lint": "echo 'No lint required'"
@@ -19,9 +19,11 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "nostalgist": "^0.21.1",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "vite": "^6.2.3"
   },
   "devDependencies": {

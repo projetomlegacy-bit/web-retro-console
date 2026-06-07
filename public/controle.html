@@ -242,14 +242,15 @@
             // Status emitido pós autorização de sala do Socket.io
             socket.on('status', (data) => {
                 if (data.success) {
+                    const pNum = data.playerNumber || 1;
                     led.className = "w-2.5 h-2.5 rounded-full bg-green-500";
                     badge.className = "text-[9px] font-pixel text-green-400 uppercase";
-                    badge.textContent = "CONECTADO";
+                    badge.textContent = `P${pNum} CONECTADO`;
 
                     lcdStatus.innerHTML = `
-                        <p class="text-[#4ade80]">SALA EMPARELHADA COM SUCESSO!</p>
-                        <p class="text-xs text-neutral-400">SALA ID: **${roomCode}**</p>
-                        <p class="text-xs text-orange-400">A: Atirar / B: Smart Bomb</p>
+                        <p class="text-[#4ade80] font-pixel text-[10px] tracking-tight">PLAYER ${pNum} ATIVO!</p>
+                        <p class="text-xs text-neutral-400 mt-1">SALA ID: **${roomCode}**</p>
+                        <p class="text-xs text-orange-300">D-pad: Movimento / A-B: Jogar</p>
                     `;
 
                     // Esconde seletor de sala e ativa botões físicos do joystick
@@ -410,13 +411,13 @@
             e.preventDefault();
             vibrate(15);
             if (socket && socket.connected) {
-                socket.emit('controller-input', { action: 'btn-a', value: true }); // Mapeia start como A para reiniciar rápido
+                socket.emit('controller-input', { action: 'start', value: true }); // Mapeia para ação real de start do NES
             }
         });
         btnStart.addEventListener('pointerup', (e) => {
             e.preventDefault();
             if (socket && socket.connected) {
-                socket.emit('controller-input', { action: 'btn-a', value: false });
+                socket.emit('controller-input', { action: 'start', value: false });
             }
         });
 
@@ -425,13 +426,13 @@
             e.preventDefault();
             vibrate(15);
             if (socket && socket.connected) {
-                socket.emit('controller-input', { action: 'btn-b', value: true }); // Mapeia select como B
+                socket.emit('controller-input', { action: 'select', value: true }); // Mapeia para ação real de select do NES
             }
         });
         btnSelect.addEventListener('pointerup', (e) => {
             e.preventDefault();
             if (socket && socket.connected) {
-                socket.emit('controller-input', { action: 'btn-b', value: false });
+                socket.emit('controller-input', { action: 'select', value: false });
             }
         });
     </script>
