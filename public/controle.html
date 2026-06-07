@@ -131,9 +131,9 @@
             </div>
         </div>
 
-        <!-- COLUNA DIREITA: Botões de Ação A/B Grandes -->
-        <div class="pointer-events-auto flex items-center justify-end">
-            <div class="flex items-center gap-4 bg-[#1a1a1a]/95 px-4 py-3 rounded-[32px] border border-neutral-800 shadow-2xl rotate-[-15deg]">
+        <!-- COLUNA DIREITA: Botões de Ação Dinâmicos (NES / Megadrive) -->
+        <div id="action-buttons-container" class="pointer-events-auto flex items-center justify-end">
+            <div id="action-buttons-group" class="flex items-center gap-4 bg-[#1a1a1a]/95 px-4 py-3 rounded-[32px] border border-neutral-800 shadow-2xl rotate-[-15deg]">
                 <!-- Botão B (Pular/Especial) -->
                 <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all">
                     <button id="btn-b-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-850 border-b-4 border-indigo-900 active:from-indigo-600 active:to-blue-700 active:border-b-0 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
@@ -219,6 +219,21 @@
             socket.on('connect', () => {
                 // Solicita entrada no quarto/room com perfil de controller
                 socket.emit('join-room', { roomCode, role: 'controller' });
+            });
+
+            // Sintoniza e escuta mudanças dinâmicas de layout enviadas pela TV/Servidor
+            socket.on('change-layout', (data) => {
+                const layout = typeof data === 'string' ? data : (data && data.layout);
+                if (layout) {
+                    changeLayout(layout);
+                }
+            });
+
+            socket.on('layout-change', (data) => {
+                const layout = typeof data === 'string' ? data : (data && data.layout);
+                if (layout) {
+                    changeLayout(layout);
+                }
             });
 
             socket.on('disconnect', () => {
@@ -366,37 +381,185 @@
             element.addEventListener('pointerleave', handleRelease, { passive: false });
         });
 
-        // Escuta Botão A (Tiro / Iniciar)
-        const btnA = document.getElementById('btn-a-action');
-        btnA.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            vibrate(35);
-            if (socket && socket.connected) {
-                socket.emit('controller-input', { action: 'btn-a', value: true });
-            }
-        });
-        btnA.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            if (socket && socket.connected) {
-                socket.emit('controller-input', { action: 'btn-a', value: false });
-            }
-        });
+        // --- 4. MAPEAMENTO DE BOTÕES DE AÇÃO DINÂMICOS ---
+        function bindButton(elementId, actionName, pressVibe) {
+            const btn = document.getElementById(elementId);
+            if (!btn) return;
 
-        // Escuta Botão B (Smart Bomb)
-        const btnB = document.getElementById('btn-b-action');
-        btnB.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            vibrate([40, 30, 40]); // Vibração dupla para o especial
-            if (socket && socket.connected) {
-                socket.emit('controller-input', { action: 'btn-b', value: true });
+            const handlePress = (e) => {
+                e.preventDefault();
+                vibrate(pressVibe);
+                btn.classList.add('scale-95');
+                
+                if (socket && socket.connected) {
+                    socket.emit('controller-input', { action: actionName, value: true });
+                    
+                    if (actionName === 'btn-c') {
+                        socket.emit('BUTTON_C', true);
+                    }
+                }
+            };
+
+            const handleRelease = (e) => {
+                e.preventDefault();
+                btn.classList.remove('scale-95');
+                
+                if (socket && socket.connected) {
+                    socket.emit('controller-input', { action: actionName, value: false });
+                    
+                    if (actionName === 'btn-c') {
+                        socket.emit('BUTTON_C', false);
+                    }
+                }
+            };
+
+            btn.addEventListener('pointerdown', handlePress, { passive: false });
+            btn.addEventListener('pointerup', handleRelease, { passive: false });
+            btn.addEventListener('pointercancel', handleRelease, { passive: false });
+            btn.addEventListener('pointerleave', handleRelease, { passive: false });
+        }
+
+        // Função para mudar layouts dinâmicamente (NES vs Megadrive vs Master System vs GBA)
+        function changeLayout(layoutName) {
+            const container = document.getElementById('action-buttons-container');
+            if (!container) return;
+
+            const safeLayout = String(layoutName).toLowerCase();
+            
+            // Remove previous shoulder buttons if any
+            const existingShoulders = document.getElementById('gba-shoulders');
+            if (existingShoulders) {
+                existingShoulders.remove();
             }
-        });
-        btnB.addEventListener('pointerup', (e) => {
-            e.preventDefault();
-            if (socket && socket.connected) {
-                socket.emit('controller-input', { action: 'btn-b', value: false });
+
+            if (safeLayout === 'megadrive_3') {
+                // Layout Sega Genesis / Mega Drive de 3 Botões (A, B, C) alinhados de forma inclinada anatômica
+                container.innerHTML = `
+                    <div id="action-buttons-group" class="flex items-center gap-2 bg-[#1a1a1a]/95 px-3 py-2.5 rounded-[32px] border border-neutral-800 shadow-2xl rotate-[-12deg]">
+                        <!-- Botão A -->
+                        <div class="flex flex-col items-center gap-0.5 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-a-action" class="w-11 h-11 rounded-full bg-gradient-to-br from-red-500 via-red-650 to-orange-600 border-b-4 border-red-900 cursor-pointer flex items-center justify-center font-pixel shadow-md transition-all" style="touch-action: none;">
+                                <span class="text-white text-xs tracking-wider font-bold select-none rotate-[12deg]">A</span>
+                            </button>
+                            <span class="text-[6px] font-pixel text-neutral-500 select-none rotate-[12deg] uppercase font-bold tracking-tight">A</span>
+                        </div>
+
+                        <!-- Botão B -->
+                        <div class="flex flex-col items-center gap-0.5 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-b-action" class="w-11 h-11 rounded-full bg-gradient-to-br from-amber-500 via-amber-600 to-yellow-600 border-b-4 border-amber-900 cursor-pointer flex items-center justify-center font-pixel shadow-md transition-all" style="touch-action: none;">
+                                <span class="text-white text-xs tracking-wider font-bold select-none rotate-[12deg]">B</span>
+                            </button>
+                            <span class="text-[6px] font-pixel text-neutral-500 select-none rotate-[12deg] uppercase font-bold tracking-tight">B</span>
+                        </div>
+
+                        <!-- Botão C -->
+                        <div class="flex flex-col items-center gap-0.5 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-c-action" class="w-11 h-11 rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-850 border-b-4 border-indigo-900 cursor-pointer flex items-center justify-center font-pixel shadow-md transition-all" style="touch-action: none;">
+                                <span class="text-white text-xs tracking-wider font-bold select-none rotate-[12deg]">C</span>
+                            </button>
+                            <span class="text-[6px] font-pixel text-neutral-500 select-none rotate-[12deg] uppercase font-bold tracking-tight">C</span>
+                        </div>
+                    </div>
+                `;
+                bindButton('btn-a-action', 'btn-a', 30);
+                bindButton('btn-b-action', 'btn-b', [40, 25, 40]);
+                bindButton('btn-c-action', 'btn-c', 30);
+            } 
+            else if (safeLayout === 'master_system') {
+                // Layout Master System: Botão 1 e Botão 2 (equivalente a B e A)
+                container.innerHTML = `
+                    <div id="action-buttons-group" class="flex items-center gap-4 bg-[#1a1a1a]/95 px-4 py-3 rounded-[32px] border border-neutral-800 shadow-2xl rotate-[-15deg]">
+                        <!-- Botão 1 -->
+                        <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-b-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-850 border-b-4 border-indigo-900 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
+                                <span class="text-white text-base tracking-wider font-bold select-none rotate-[15deg]">1</span>
+                            </button>
+                            <span class="text-[7px] font-pixel text-neutral-500 select-none rotate-[15deg] uppercase font-bold tracking-tight">BOTÃO 1</span>
+                        </div>
+
+                        <!-- Botão 2 -->
+                        <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-a-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-red-500 via-red-650 to-orange-600 border-b-4 border-red-900 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
+                                <span class="text-white text-base tracking-wider font-bold select-none rotate-[15deg]">2</span>
+                            </button>
+                            <span class="text-[7px] font-pixel text-neutral-500 select-none rotate-[15deg] uppercase font-bold tracking-tight">BOTÃO 2</span>
+                        </div>
+                    </div>
+                `;
+                bindButton('btn-b-action', 'btn-b', [40, 25, 40]);
+                bindButton('btn-a-action', 'btn-a', 30);
             }
-        });
+            else if (safeLayout === 'gba') {
+                // Layout GBA: Botões A e B clássicos inclinados
+                container.innerHTML = `
+                    <div id="action-buttons-group" class="flex items-center gap-4 bg-[#1a1a1a]/95 px-4 py-3 rounded-[32px] border border-neutral-800 shadow-2xl rotate-[-15deg]">
+                        <!-- Botão B -->
+                        <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-b-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-neutral-600 via-neutral-700 to-neutral-800 border-b-4 border-neutral-900 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
+                                <span class="text-white text-base tracking-wider font-bold select-none rotate-[15deg]">B</span>
+                            </button>
+                            <span class="text-[7px] font-pixel text-neutral-500 select-none rotate-[15deg] uppercase font-bold tracking-tight">B</span>
+                        </div>
+
+                        <!-- Botão A -->
+                        <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-a-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-red-500 via-red-650 to-orange-600 border-b-4 border-red-900 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
+                                <span class="text-white text-base tracking-wider font-bold select-none rotate-[15deg]">A</span>
+                            </button>
+                            <span class="text-[7px] font-pixel text-neutral-500 select-none rotate-[15deg] uppercase font-bold tracking-tight">A</span>
+                        </div>
+                    </div>
+                `;
+                
+                // Gatilhos L e R no topo superiores esquerdo e direito como solicitado
+                const shoulders = document.createElement('div');
+                shoulders.id = 'gba-shoulders';
+                shoulders.className = 'absolute inset-x-0 top-24 px-6 md:px-12 flex justify-between pointer-events-none z-30 animate-fade-in';
+                shoulders.innerHTML = `
+                    <!-- Shoulder L -->
+                    <button id="btn-l-action" class="pointer-events-auto w-16 h-8 bg-gradient-to-b from-neutral-800 to-neutral-900 hover:from-neutral-700 hover:to-neutral-800 border border-neutral-700/50 rounded-lg active:scale-95 shadow-md flex items-center justify-center text-xs font-pixel text-neutral-300 select-none cursor-pointer" style="touch-action: none;">
+                        L
+                    </button>
+                    <!-- Shoulder R -->
+                    <button id="btn-r-action" class="pointer-events-auto w-16 h-8 bg-gradient-to-b from-neutral-800 to-neutral-900 hover:from-neutral-700 hover:to-neutral-800 border border-neutral-700/50 rounded-lg active:scale-95 shadow-md flex items-center justify-center text-xs font-pixel text-neutral-300 select-none cursor-pointer" style="touch-action: none;">
+                        R
+                    </button>
+                `;
+                document.getElementById('controller-pad').appendChild(shoulders);
+
+                bindButton('btn-b-action', 'btn-b', [40, 25, 40]);
+                bindButton('btn-a-action', 'btn-a', 30);
+                bindButton('btn-l-action', 'btn-l', 25);
+                bindButton('btn-r-action', 'btn-r', 25);
+            }
+            else {
+                // Layout Clássico NES de 2 Botões (B e A)
+                container.innerHTML = `
+                    <div id="action-buttons-group" class="flex items-center gap-4 bg-[#1a1a1a]/95 px-4 py-3 rounded-[32px] border border-neutral-800 shadow-2xl rotate-[-15deg]">
+                        <!-- Botão B -->
+                        <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-b-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-850 border-b-4 border-indigo-900 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
+                                <span class="text-white text-base tracking-wider font-bold select-none rotate-[15deg]">B</span>
+                            </button>
+                            <span class="text-[7px] font-pixel text-neutral-500 select-none rotate-[15deg] uppercase font-bold tracking-tight">PULAR</span>
+                        </div>
+
+                        <!-- Botão A -->
+                        <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all animate-fade-in">
+                            <button id="btn-a-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-red-500 via-red-650 to-orange-600 border-b-4 border-red-900 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
+                                <span class="text-white text-base tracking-wider font-bold select-none rotate-[15deg]">A</span>
+                            </button>
+                            <span class="text-[7px] font-pixel text-neutral-500 select-none rotate-[15deg] uppercase font-bold tracking-tight">ATIRAR</span>
+                        </div>
+                    </div>
+                `;
+                bindButton('btn-b-action', 'btn-b', [40, 25, 40]);
+                bindButton('btn-a-action', 'btn-a', 30);
+            }
+        }
+
+        // Inicializa com o layout padrão 'nes'
+        changeLayout('nes');
 
         // Escutador auxiliar para Select & Start
         const btnStart = document.getElementById('btn-start');

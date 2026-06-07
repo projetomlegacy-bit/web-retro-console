@@ -15,10 +15,16 @@ import {
   Cpu, 
   Link as LinkIcon, 
   Check, 
-  HelpCircle 
+  HelpCircle,
+  Trash2,
+  AlertTriangle,
+  FolderOpen,
+  FolderPlus,
+  FolderMinus,
+  Unlock
 } from 'lucide-react';
 
-// --- NES CONTROLLER KEY MAP FOR EMULATION ---
+// --- NES & MEGADRIVE CONTROLLER KEY MAP FOR EMULATION ---
 // This map correlates incoming socket actions of the mobile controller
 // to the RetroArch button parameters expected by Nostalgist.pressDown/Up
 const ACTION_BUTTON_MAP: Record<string, string> = {
@@ -28,6 +34,24 @@ const ACTION_BUTTON_MAP: Record<string, string> = {
   'btn-b': 'b',
   'button_b': 'b',
   'b': 'b',
+  'btn-c': 'c',
+  'button_c': 'c',
+  'c': 'c',
+  'btn-x': 'x',
+  'button_x': 'x',
+  'x': 'x',
+  'btn-y': 'y',
+  'button_y': 'y',
+  'y': 'y',
+  'btn-z': 'z',
+  'button_z': 'z',
+  'z': 'z',
+  'btn-l': 'l',
+  'button_l': 'l',
+  'l': 'l',
+  'btn-r': 'r',
+  'button_r': 'r',
+  'r': 'r',
   'start': 'start',
   'select': 'select',
   'up': 'up',
@@ -131,12 +155,170 @@ class RetroAudioEngine {
 
 const audio = new RetroAudioEngine();
 
+// --- MULTI-CONSOLE UTILITIES (NES / MEGADRIVE AUTO DETECT) ---
+const getConsoleTypeAndCore = (romPathOrName: string) => {
+  const name = String(romPathOrName).toLowerCase();
+  if (name.endsWith('.md') || name.endsWith('.bin') || name.includes('megadrive') || name.includes('genesis')) {
+    return { console: 'megadrive', core: 'genesis_plus_gx', layout: 'megadrive_3' };
+  }
+  if (name.endsWith('.sms') || name.includes('mastersystem') || name.includes('master system')) {
+    return { console: 'sms', core: 'gearsystem', layout: 'master_system' };
+  }
+  if (name.endsWith('.gba') || name.includes('gameboyadvance') || name.includes('game boy advance') || name.includes('gba')) {
+    return { console: 'gba', core: 'mgba', layout: 'gba' };
+  }
+  if (name.endsWith('.gbc') || name.endsWith('.gb') || name.includes('gameboycolor') || name.includes('game boy color') || name.includes('gbc') || name.includes('gameboy') || name.includes('gb')) {
+    return { console: 'gbc', core: 'gambatte', layout: 'nes' };
+  }
+  if (name.endsWith('.n64') || name.endsWith('.z64') || name.includes('nintendo64') || name.includes('n64')) {
+    return { console: 'n64', core: 'mupen64plus_next', layout: 'nes' };
+  }
+  return { console: 'nes', core: 'fceumm', layout: 'nes' };
+};
+
+// --- INDEXEDDB PERSISTENCE LAYER ---
+interface StoredRom {
+  id: string; // unique identifier (file.name or specific id)
+  nome: string; // original displayed file name
+  tipo: string; // 'nes' | 'megadrive' | 'sms' | 'gba' | 'gbc' | 'n64'
+  data: Blob; // the binary ROM file
+}
+
+const openMLegacyDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB não suportado'));
+      return;
+    }
+    const request = window.indexedDB.open('MLegacyDB', 1);
+
+    request.onerror = () => {
+      console.error('Erro ao abrir MLegacyDB:', request.error);
+      reject(request.error);
+    };
+
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+
+    request.onupgradeneeded = (event: any) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('roms')) {
+        db.createObjectStore('roms', { keyPath: 'id' });
+      }
+    };
+  });
+};
+
+const saveRomToIndexedDB = async (rom: StoredRom): Promise<void> => {
+  const db = await openMLegacyDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('roms', 'readwrite');
+    const store = transaction.objectStore('roms');
+    const request = store.put(rom);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const getAllRomsFromIndexedDB = async (): Promise<StoredRom[]> => {
+  const db = await openMLegacyDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('roms', 'readonly');
+    const store = transaction.objectStore('roms');
+    const request = store.getAll();
+
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const deleteRomFromIndexedDB = async (id: string): Promise<void> => {
+  const db = await openMLegacyDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('roms', 'readwrite');
+    const store = transaction.objectStore('roms');
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+// --- MLEGACYDIRECTORYDB PERSISTENCE LAYER ---
+const openMLegacyDirectoryDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      reject(new Error('IndexedDB não suportado'));
+      return;
+    }
+    const request = window.indexedDB.open('MLegacyDirectoryDB', 1);
+
+    request.onerror = () => {
+      console.error('Erro ao abrir MLegacyDirectoryDB:', request.error);
+      reject(request.error);
+    };
+
+    request.onsuccess = () => {
+      resolve(request.result);
+    };
+
+    request.onupgradeneeded = (event: any) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('directory')) {
+        db.createObjectStore('directory', { keyPath: 'id' });
+      }
+    };
+  });
+};
+
+const saveDirectoryHandle = async (handle: FileSystemDirectoryHandle): Promise<void> => {
+  const db = await openMLegacyDirectoryDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('directory', 'readwrite');
+    const store = transaction.objectStore('directory');
+    const request = store.put({ id: 'main_directory', handle });
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const getDirectoryHandle = async (): Promise<FileSystemDirectoryHandle | null> => {
+  const db = await openMLegacyDirectoryDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('directory', 'readonly');
+    const store = transaction.objectStore('directory');
+    const request = store.get('main_directory');
+
+    request.onsuccess = () => {
+      resolve(request.result ? request.result.handle : null);
+    };
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const deleteDirectoryHandle = async (): Promise<void> => {
+  const db = await openMLegacyDirectoryDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('directory', 'readwrite');
+    const store = transaction.objectStore('directory');
+    const request = store.delete('main_directory');
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+};
+
 export default function App() {
   // Configurações do Console e Conectividade
   const [roomCode, setRoomCode] = useState<string>('');
-  const [p1Connected, setP1Connected] = useState<boolean>(false);
-  const [p2Connected, setP2Connected] = useState<boolean>(false);
-  const deviceConnected = p1Connected || p2Connected;
+  const [player1Conectado, setPlayer1Conectado] = useState<boolean>(false);
+  const [player2Conectado, setPlayer2Conectado] = useState<boolean>(false);
+  const p1Connected = player1Conectado;
+  const p2Connected = player2Conectado;
+  const deviceConnected = player1Conectado || player2Conectado;
   const [serverOnline, setServerOnline] = useState<boolean>(false);
   const [socketError, setSocketError] = useState<string>('');
   
@@ -144,16 +326,310 @@ export default function App() {
   const [directUrl, setDirectUrl] = useState<string>('Carregando...');
   const [isCopied, setIsCopied] = useState<boolean>(false);
 
-  // Seleção de ROMs
-  const [selectedRom, setSelectedRom] = useState<string>('/roms/megaman2.nes');
-  const [customRomName, setCustomRomName] = useState<string>('');
-  const [customRomBlob, setCustomRomBlob] = useState<Blob | null>(null);
+  // Seleção de ROMs e Estante de Locadora Virtual
+  interface Cartucho {
+    id: string;
+    title: string;
+    console: 'nes' | 'megadrive' | 'sms' | 'gba' | 'gbc' | 'n64';
+    url: string;
+    coverUrl: string;
+    customBlob?: Blob;
+    customName?: string;
+  }
 
-  // Estados do Emulador NES
+  const [games, setGames] = useState<Cartucho[]>([
+    {
+      id: '/roms/megaman2.nes',
+      title: 'Mega Man 2 Lite',
+      console: 'nes',
+      url: '/roms/megaman2.nes',
+      coverUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&q=80&w=240'
+    },
+    {
+      id: 'https://github.com/Krikzz/EDMD/raw/master/roms/test.bin',
+      title: 'Sega Hardware Test',
+      console: 'megadrive',
+      url: 'https://github.com/Krikzz/EDMD/raw/master/roms/test.bin',
+      coverUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=240'
+    },
+    {
+      id: 'https://github.com/christopherpow/nes-test-roms/raw/master/other/nestest.nes',
+      title: 'NES CPU Nestest',
+      console: 'nes',
+      url: 'https://github.com/christopherpow/nes-test-roms/raw/master/other/nestest.nes',
+      coverUrl: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?auto=format&fit=crop&q=80&w=240'
+    }
+  ]);
+
+  const [selectedRom, setSelectedRom] = useState<string>('/roms/megaman2.nes');
+
+  // Directory Access (File System Access API & IndexedDB Persistent Handle)
+  const [directoryName, setDirectoryName] = useState<string>('');
+  const [needsDirectoryPermission, setNeedsDirectoryPermission] = useState<boolean>(false);
+  const dirHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
+
+  const scanDirectory = async (handle: FileSystemDirectoryHandle): Promise<Cartucho[]> => {
+    const list: Cartucho[] = [];
+    try {
+      for await (const entry of handle.values()) {
+        if (entry.kind === 'file') {
+          const nameLower = entry.name.toLowerCase();
+          if (
+            nameLower.endsWith('.nes') ||
+            nameLower.endsWith('.md') ||
+            nameLower.endsWith('.bin') ||
+            nameLower.endsWith('.sms') ||
+            nameLower.endsWith('.gba') ||
+            nameLower.endsWith('.gbc') ||
+            nameLower.endsWith('.gb') ||
+            nameLower.endsWith('.n64') ||
+            nameLower.endsWith('.z64')
+          ) {
+            const cleanTitle = entry.name.replace(/\.[^/.]+$/, ""); // strip extension
+            const fileConsole = getConsoleTypeAndCore(entry.name).console as any;
+            list.push({
+              id: `dir-${entry.name}`,
+              title: cleanTitle,
+              console: fileConsole,
+              url: 'directory',
+              coverUrl: '',
+              customName: entry.name
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao escanear diretório:', error);
+    }
+    return list;
+  };
+
+  const handleLinkDirectory = async () => {
+    if (typeof window === 'undefined' || !('showDirectoryPicker' in window)) {
+      setToast({
+        message: 'Seu navegador não suporta a API de Acesso ao Sistema de Arquivos. Use o Google Chrome ou Microsoft Edge.',
+        type: 'error'
+      });
+      return;
+    }
+    try {
+      audio.playBeep();
+      const handle = await (window as any).showDirectoryPicker();
+      if (!handle) return;
+
+      dirHandleRef.current = handle;
+      setDirectoryName(handle.name);
+      setNeedsDirectoryPermission(false);
+
+      // Save persistent reference to IndexedDB database MLegacyDirectoryDB
+      await saveDirectoryHandle(handle);
+
+      const scannedGames = await scanDirectory(handle);
+      
+      setGames(prev => {
+        const filtered = prev.filter(g => g.url !== 'directory');
+        return [...filtered, ...scannedGames];
+      });
+
+      setToast({
+        message: `Pasta "${handle.name}" vinculada com sucesso! ${scannedGames.length} jogo(s) inseridos na estante!`,
+        type: 'success'
+      });
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.log('Seleção de diretório cancelada.');
+        return;
+      }
+      console.error('Erro ao selecionar pasta:', err);
+      setToast({
+        message: 'Erro ao vincular pasta local: ' + err.message,
+        type: 'error'
+      });
+    }
+  };
+
+  const handleRequestDirectoryPermission = async () => {
+    const handle = dirHandleRef.current;
+    if (!handle) return;
+    try {
+      audio.playBeep();
+      const options = { mode: 'read' as const };
+      const permissionStatus = await handle.requestPermission(options);
+      if (permissionStatus === 'granted') {
+        setNeedsDirectoryPermission(false);
+        const scannedGames = await scanDirectory(handle);
+        setGames(prev => {
+          const filtered = prev.filter(g => g.url !== 'directory');
+          return [...filtered, ...scannedGames];
+        });
+        setToast({
+          message: `Pasta "${handle.name}" ativada! ${scannedGames.length} jogo(s) carregados com sucesso!`,
+          type: 'success'
+        });
+      } else {
+        setToast({
+          message: 'Permissão de leitura negada para a pasta local.',
+          type: 'error'
+        });
+      }
+    } catch (err: any) {
+      console.error('Erro de permissão da pasta:', err);
+      setToast({
+        message: 'Falha de autenticação: ' + err.message,
+        type: 'error'
+      });
+    }
+  };
+
+  const handleUnlinkDirectory = async () => {
+    try {
+      audio.playBeep();
+      await deleteDirectoryHandle();
+      dirHandleRef.current = null;
+      setDirectoryName('');
+      setNeedsDirectoryPermission(false);
+      
+      // Remove all directory backed games from state
+      setGames(prev => prev.filter(g => g.url !== 'directory'));
+      
+      const currentRom = selectedRom;
+      const isRomFromDir = games.some(g => g.id === currentRom && g.url === 'directory');
+      if (isRomFromDir) {
+        const remaining = games.filter(g => g.url !== 'directory');
+        if (remaining.length > 0) {
+          setSelectedRom(remaining[0].id);
+          const { layout } = getConsoleTypeAndCore(remaining[0].customName || remaining[0].id);
+          setControllerLayout(layout);
+        } else {
+          setSelectedRom('');
+        }
+      }
+
+      setToast({
+        message: 'Pasta desvinculada com sucesso!',
+        type: 'success'
+      });
+    } catch (err: any) {
+      console.error('Erro ao desvincular pasta de jogos:', err);
+    }
+  };
+
+  // Estados de notificações e confirmações livres de APIs iframe bloqueantes
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' } | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Carrega diretório vinculado no IndexedDB na inicialização
+  useEffect(() => {
+    let active = true;
+    const initDirectory = async () => {
+      const isDirectoryPickerSupported = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+      if (!isDirectoryPickerSupported) return;
+      try {
+        const handle = await getDirectoryHandle();
+        if (!active) return;
+        if (handle) {
+          dirHandleRef.current = handle;
+          setDirectoryName(handle.name);
+
+          // Verifica se já temos a permissão ativa de forma silenciosa
+          const options = { mode: 'read' as const };
+          const permissionStatus = await handle.queryPermission(options);
+          if (permissionStatus === 'granted') {
+            const scannedGames = await scanDirectory(handle);
+            if (!active) return;
+            setGames(prev => {
+              const filtered = prev.filter(g => g.url !== 'directory');
+              return [...filtered, ...scannedGames];
+            });
+          } else {
+            // Se precisar de permissão por interação do usuário, altera o estado para alertar no painel
+            setNeedsDirectoryPermission(true);
+          }
+        }
+      } catch (err) {
+        console.error('Erro ao inicializar diretório do IndexedDB:', err);
+      }
+    };
+    initDirectory();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Carrega ROMs salvas no IndexedDB na inicialização
+  useEffect(() => {
+    let active = true;
+    const loadStoredRoms = async () => {
+      try {
+        const stored = await getAllRomsFromIndexedDB();
+        if (!active) return;
+        if (stored && stored.length > 0) {
+          const loadedCartridges: Cartucho[] = stored.map(rom => {
+            const cleanTitle = rom.nome.replace(/\.[^/.]+$/, ""); // Remove extensão
+            return {
+              id: rom.id,
+              title: cleanTitle,
+              console: rom.tipo as any,
+              url: 'custom',
+              coverUrl: '',
+              customBlob: rom.data,
+              customName: rom.nome
+            };
+          });
+          setGames(prev => {
+            // Remove duplicados antes de concatenar para segurança
+            const filtered = prev.filter(g => !loadedCartridges.some(loaded => loaded.id === g.id || (g.customName && loaded.customName === g.customName)));
+            return [...filtered, ...loadedCartridges];
+          });
+        }
+      } catch (err) {
+        console.error('Erro ao carregar ROMs do IndexedDB na inicialização:', err);
+      }
+    };
+    loadStoredRoms();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Estados do Emulador NES / Mega Drive
   const [isEmulatorActive, setIsEmulatorActive] = useState<boolean>(false);
   const [isEmulatorLoading, setIsEmulatorLoading] = useState<boolean>(false);
   const [emulatorStateText, setEmulatorStateText] = useState<string>('Desligado');
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [controllerLayout, setControllerLayout] = useState<string>('nes');
+  const controllerLayoutRef = useRef<string>('nes');
+
+  // Refs de Sincronização em Tempo Real (Evita Stale Closures nos Eventos de Sockets e Teclado)
+  const selectedRomRef = useRef<string>(selectedRom);
+  const gamesListRef = useRef<Cartucho[]>(games);
+  const isEmulatorActiveRef = useRef<boolean>(isEmulatorActive);
+  const isEmulatorLoadingRef = useRef<boolean>(isEmulatorLoading);
+
+  useEffect(() => {
+    selectedRomRef.current = selectedRom;
+  }, [selectedRom]);
+
+  useEffect(() => {
+    gamesListRef.current = games;
+  }, [games]);
+
+  useEffect(() => {
+    isEmulatorActiveRef.current = isEmulatorActive;
+  }, [isEmulatorActive]);
+
+  useEffect(() => {
+    isEmulatorLoadingRef.current = isEmulatorLoading;
+  }, [isEmulatorLoading]);
 
   // Monitor e log de eventos recebidos em tempo real do sinal d-pad/joystick
   const [logs, setLogs] = useState<Array<{ id: string; msg: string; timestamp: string; type: 'info' | 'input' | 'success' | 'warn' }>>([
@@ -168,6 +644,7 @@ export default function App() {
   const socketRef = useRef<Socket | null>(null);
   const nostalgistInstance = useRef<any | null>(null);
   const activeControllersRef = useRef<Map<string, number>>(new Map());
+  const player2ParticipatedRef = useRef<boolean>(false);
 
   const addLogRef = useRef<(msg: string, type?: 'info' | 'input' | 'success' | 'warn') => void>(() => {});
   
@@ -241,13 +718,23 @@ export default function App() {
     setRoomCode(code);
   }, []);
 
+  // Monitora alterações de layout do controle e transmite para os controles conectados
+  useEffect(() => {
+    controllerLayoutRef.current = controllerLayout;
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('change-layout', controllerLayout);
+      addLogRef.current(`Layout alternado para: ${controllerLayout === 'nes' ? 'NES (A/B)' : 'Mega Drive (A/B/C)'}`, 'success');
+    }
+  }, [controllerLayout]);
+
   // Conecta WebSocket de comunicação
   useEffect(() => {
     if (!roomCode) return;
 
     const hostname = window.location.origin;
     // Iniciamos com polling de fallback confiável para evitar problemas de proxy / CORS em WebSockets puros
-    const socketInstance = io(hostname, {
+    // Conectamos via caminho relativo para que a requisição seja considerada same-origin, evitando preflight/CORS no iframe do AI Studio.
+    const socketInstance = io({
       transports: ['polling', 'websocket'],
       reconnectionAttempts: 10,
     });
@@ -271,8 +758,8 @@ export default function App() {
 
     socketInstance.on('disconnect', () => {
       setServerOnline(false);
-      setP1Connected(false);
-      setP2Connected(false);
+      setPlayer1Conectado(false);
+      setPlayer2Conectado(false);
       activeControllersRef.current.clear();
       addLogRef.current('Console desconectado do servidor.', 'warn');
     });
@@ -281,31 +768,75 @@ export default function App() {
     socketInstance.on('controller-connected', (data: { id: string; playerNumber: number }) => {
       const { id, playerNumber } = data;
       activeControllersRef.current.set(id, playerNumber);
+      
+      let p1Now = player1Conectado;
+      let p2Now = player2Conectado;
+
       if (playerNumber === 1) {
-        setP1Connected(true);
+        setPlayer1Conectado(true);
+        p1Now = true;
       } else if (playerNumber === 2) {
-        setP2Connected(true);
+        setPlayer2Conectado(true);
+        p2Now = true;
+        player2ParticipatedRef.current = true;
       }
+      
       audio.playStart();
       addLogRef.current(`Controle Player ${playerNumber} pareado e sintonizado!`, 'success');
+
+      // Envia o layout atualmente ativo para o novo controle se sintonizar automaticamente
+      setTimeout(() => {
+        if (socketInstance.connected) {
+          socketInstance.emit('change-layout', controllerLayoutRef.current);
+        }
+      }, 400);
+
+      // Se o emulador estiver ativo e pausado, gerencia a retomada inteligente (resume)
+      if (nostalgistInstance.current && (nostalgistInstance.current.getStatus() === 'paused' || emulatorStateText.startsWith('Pausado'))) {
+        const isMultiplayer = player2ParticipatedRef.current;
+        if (isMultiplayer) {
+          // No modo Multiplayer, SÓ resume se P1 E P2 estiverem e permanecerem ativos/conectados
+          if (p1Now && p2Now) {
+            nostalgistInstance.current.resume();
+            setEmulatorStateText('Executando jogo');
+            addLogRef.current('Ambos os jogadores conectados. Jogo retomado!', 'success');
+          } else {
+            addLogRef.current('Aguardando reconexão de ambos os jogadores para despausar.', 'info');
+          }
+        } else {
+          // No modo Singleplayer, basta o P1 estar online para retomar
+          if (p1Now) {
+            nostalgistInstance.current.resume();
+            setEmulatorStateText('Executando jogo');
+            addLogRef.current('Player 1 reconectado. Jogo retomado!', 'success');
+          }
+        }
+      }
     });
 
     socketInstance.on('controller-disconnected', (data: { id: string; playerNumber: number }) => {
       const { id, playerNumber } = data;
       activeControllersRef.current.delete(id);
+      
       if (playerNumber === 1) {
-        setP1Connected(false);
+        setPlayer1Conectado(false);
       } else if (playerNumber === 2) {
-        setP2Connected(false);
+        setPlayer2Conectado(false);
       }
+      
       audio.playGameOver();
       addLogRef.current(`Controle Player ${playerNumber} desemparelhado.`, 'warn');
       
-      // Se todos os controles desconectarem e o emulador estiver rodando, suspende para que o player não morra
-      if (activeControllersRef.current.size === 0) {
-        if (nostalgistInstance.current && nostalgistInstance.current.getStatus() === 'running') {
+      // Se qualquer um dos players cair e o jogo estiver executando, pausa e exibe o status de quem caiu
+      if (nostalgistInstance.current && nostalgistInstance.current.getStatus() === 'running') {
+        const isP1 = playerNumber === 1;
+        const isP2 = playerNumber === 2;
+        
+        // Pausa se o jogador que se desconectou fazia parte da atividade (P1 sempre, P2 apenas se já participou)
+        if (isP1 || (isP2 && player2ParticipatedRef.current)) {
           nostalgistInstance.current.pause();
-          setEmulatorStateText('Pausado (Controles Desconectados)');
+          setEmulatorStateText(`Pausado (Player ${playerNumber} desconectou)`);
+          addLogRef.current(`Jogo pausado: Player ${playerNumber} caiu!`, 'warn');
         }
       }
     });
@@ -334,6 +865,22 @@ export default function App() {
           } else {
             nostalgistInstance.current.pressUp({ button: mappedDir, player: playerNumber });
           }
+        } else {
+          // Se o emulador não estiver rodando, o controle navega pelas caixas da estante de locadora
+          if (pressed && !isEmulatorLoadingRef.current) {
+            const currentGames = gamesListRef.current;
+            const currentRom = selectedRomRef.current;
+            const currentIndex = currentGames.findIndex(g => g.id === currentRom);
+            if (currentIndex !== -1) {
+              if (mappedDir === 'left') {
+                const nextIndex = (currentIndex - 1 + currentGames.length) % currentGames.length;
+                selectGameRef.current(currentGames[nextIndex].id);
+              } else if (mappedDir === 'right') {
+                const nextIndex = (currentIndex + 1) % currentGames.length;
+                selectGameRef.current(currentGames[nextIndex].id);
+              }
+            }
+          }
         }
         // Despacha fallback de teclado mesmo se a instância estiver pendente ou travada na renderização
         dispatchKeyboardFallback(mappedDir, pressed, playerNumber);
@@ -350,6 +897,16 @@ export default function App() {
               nostalgistInstance.current.pressDown({ button: mappedButton, player: playerNumber });
             } else {
               nostalgistInstance.current.pressUp({ button: mappedButton, player: playerNumber });
+            }
+          } else {
+            // Se o emulador não estiver ativo, botões A ou START iniciam o jogo
+            if (isPressed && !isEmulatorLoadingRef.current) {
+              if (mappedButton === 'a' || mappedButton === 'start') {
+                const btnPower = document.getElementById('btn-power-on') || document.getElementById('power-on-overlay');
+                if (btnPower) {
+                  try { (btnPower as any).click(); } catch(e) {}
+                }
+              }
             }
           }
           dispatchKeyboardFallback(mappedButton, isPressed, playerNumber);
@@ -414,31 +971,230 @@ export default function App() {
     }
   }, [isMuted]);
 
+  // Seleção e ativação visual de cartuchos na estante
+  const selectGame = (gameId: string) => {
+    setSelectedRom(gameId);
+    audio.playBeep();
+
+    const game = gamesListRef.current.find(g => g.id === gameId);
+    const activeName = (game && game.url === 'custom') ? (game.customName || '') : gameId;
+    const { layout } = getConsoleTypeAndCore(activeName);
+    setControllerLayout(layout);
+
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('change-layout', layout);
+      socketRef.current.emit('change-layout', { layout });
+      socketRef.current.emit('layout-change', layout);
+      socketRef.current.emit('layout-change', { layout });
+      socketRef.current.emit('change_layout', { layout });
+    }
+  };
+
+  const selectGameRef = useRef<(gameId: string) => void>(selectGame);
+  useEffect(() => {
+    selectGameRef.current = selectGame;
+  }, [games]);
+
+  // Navegação por teclado físico (ArrowLeft / ArrowRight para navegar, Enter / Espaço para ligar)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (isEmulatorActiveRef.current || isEmulatorLoadingRef.current) return;
+
+      const currentGames = gamesListRef.current;
+      const currentRom = selectedRomRef.current;
+      const currentIndex = currentGames.findIndex(g => g.id === currentRom);
+      if (currentIndex === -1) return;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const nextIndex = (currentIndex - 1 + currentGames.length) % currentGames.length;
+        selectGameRef.current(currentGames[nextIndex].id);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const nextIndex = (currentIndex + 1) % currentGames.length;
+        selectGameRef.current(currentGames[nextIndex].id);
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handlePowerOn();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  // Tratador de abertura de confirmação para remoção de jogos da estante
+  const handleRemoveClick = (gameId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    audio.playBeep();
+
+    // Verificação de segurança: Não é permitido remover um jogo que está sendo executado no Console!
+    if (isEmulatorActiveRef.current && selectedRomRef.current === gameId) {
+      setToast({
+        message: 'Não é possível remover o jogo em uso! Desative o console antes de excluí-lo.',
+        type: 'error'
+      });
+      return;
+    }
+
+    const gameParaRemover = games.find(g => g.id === gameId);
+    if (!gameParaRemover) return;
+
+    // Em vez de usar "window.confirm" que é bloqueado por navegadores em sandbox/iframe do AI Studio,
+    // atualizamos o estado para abrir o modal arcade customizado
+    setConfirmDelete({
+      id: gameId,
+      title: gameParaRemover.title
+    });
+  };
+
+  // Executa de fato a deleção após a confirmação no modal
+  const confirmarRemocao = () => {
+    if (!confirmDelete) return;
+    const { id: gameId, title: titulo } = confirmDelete;
+
+    const novaLista = games.filter(g => g.id !== gameId);
+    setGames(novaLista);
+
+    // Remove do IndexedDB para se manter persistente no navegador
+    deleteRomFromIndexedDB(gameId).catch(err => {
+      console.error('Erro ao remover ROM do IndexedDB:', err);
+    });
+
+    // Se o jogo deletado for a ROM selecionada, re-seleciona a primeira disponível
+    if (selectedRom === gameId) {
+      if (novaLista.length > 0) {
+        setSelectedRom(novaLista[0].id);
+        const activeName = (novaLista[0].url === 'custom') ? (novaLista[0].customName || '') : novaLista[0].id;
+        const { layout } = getConsoleTypeAndCore(activeName);
+        setControllerLayout(layout);
+        if (socketRef.current && socketRef.current.connected) {
+          socketRef.current.emit('change-layout', layout);
+        }
+      } else {
+        setSelectedRom('');
+      }
+    }
+
+    setToast({
+      message: `"${titulo}" removido com sucesso da locadora!`,
+      type: 'success'
+    });
+    setConfirmDelete(null);
+  };
+
   // Inicialização do emulador retro nostalgist
   const handlePowerOn = async () => {
-    if (isEmulatorActive) return;
-    if (!canvasRef.current) return;
+    console.log('[Retro Console] Iniciando processo de POWER ON do emulador...');
+    // Limpeza de Instância: se houver um nostalgist anterior ativo, destrói antes de dar o launch no novo core
+    if (nostalgistInstance.current) {
+      console.log('[Retro Console] Instância anterior detectada. Iniciando encerramento...');
+      try {
+        await nostalgistInstance.current.exit({ removeCanvas: false });
+        console.log('[Retro Console] Instância anterior do emulador encerrada com sucesso.');
+      } catch (err) {
+        console.error('[Retro Console] Erro crítico ao destruir instância anterior:', err);
+      }
+      nostalgistInstance.current = null;
+    }
+    setIsEmulatorActive(false);
+    isEmulatorActiveRef.current = false;
+
+    if (!canvasRef.current) {
+      console.error('[Retro Console] Tentativa de inicialização abortada: elemento canvasRef.current é nulo.');
+      return;
+    }
 
     audio.playBeep();
     setIsEmulatorLoading(true);
     setEmulatorStateText('Sincronizando Hardware...');
+    player2ParticipatedRef.current = player2Conectado;
+
+    const activeRom = selectedRomRef.current;
+    console.log('[Retro Console] Selecionando ROM ativa com ID:', activeRom);
+    const game = gamesListRef.current.find(g => g.id === activeRom);
+    const activeRomName = (game && (game.url === 'custom' || game.url === 'directory')) ? (game.customName || '') : activeRom;
+    const { console: consoleType, layout: romLayout } = getConsoleTypeAndCore(activeRomName);
+
+    const determinarCore = (caminhoRom: string) => {
+      const ext = caminhoRom.toLowerCase().split('.').pop();
+      if (ext === 'nes') return 'fceumm';
+      if (ext === 'gba') return 'mgba';
+      if (ext === 'gbc' || ext === 'gb') return 'gambatte';
+      if (ext === 'sms') return 'gearsystem';
+      if (ext === 'md' || ext === 'bin') return 'genesis_plus_gx';
+      if (ext === 'n64' || ext === 'z64') return 'mupen64plus_next';
+      return 'fceumm';
+    };
+
+    const selectedCore = determinarCore(activeRomName);
+    console.log(`[Retro Console] Core determinado: "${selectedCore}" para console: "${consoleType}"`);
 
     try {
-      // Determina arquivo a carregar (ROM de teste local, ou Blob customizado feito upload)
-      let romSource: any = selectedRom;
-      if (customRomBlob && selectedRom === 'custom') {
-        romSource = new File([customRomBlob], customRomName || 'custom.nes', { type: 'application/octet-stream' });
+      // Determina arquivo a carregar (ROM de teste local, Blob customizado feito upload, ou leitura direta do HD)
+      let romSource: any = activeRom;
+      console.log('[Retro Console] Preparando romSource. Tipo de url:', game ? game.url : 'rom nativa');
+
+      if (game && game.url === 'custom' && game.customBlob) {
+        console.log('[Retro Console] Jogo customizado do IndexedDB detectado:', game.customName, '- Tamanho da ROM:', game.customBlob.size, 'bytes');
+        
+        try {
+          const extension = activeRomName.toLowerCase().split('.').pop() || 'nes';
+          const fileExt = `custom.${extension}`;
+          const fileName = game.customName || fileExt;
+          
+          console.log(`[Retro Console] Criando arquivo virtual de persistência: ${fileName}`);
+          const fileObject = new File([game.customBlob], fileName, { type: 'application/octet-stream' });
+          
+          // Passamos o File object diretamente para o Nostalgist, o que garante a detecção correta da extensão e evita "End of central directory not found"
+          romSource = fileObject;
+          console.log('[Retro Console] Objeto File criado com sucesso e definido como romSource:', romSource);
+        } catch (blobErr) {
+          console.error('[Retro Console] Falha ao encapsular em File, tentando URL.createObjectURL direta do Blob de dados:', blobErr);
+          romSource = URL.createObjectURL(game.customBlob);
+          console.log('[Retro Console] URL de Objeto criada diretamente do Blob puro (Aviso: pode falhar se o emulador exigir extensão física):', romSource);
+        }
+      } else if (game && game.url === 'directory' && game.customName) {
+        console.log('[Retro Console] Lendo arquivo da pasta vinculada:', game.customName);
+        const dirHandle = dirHandleRef.current;
+        if (!dirHandle) {
+          throw new Error('A pasta de jogos vinculada não está ativa ou foi desconectada.');
+        }
+        console.log('[Retro Console] Checando permissão de leitura para pasta física...');
+        const permissionStatus = await dirHandle.queryPermission({ mode: 'read' });
+        if (permissionStatus !== 'granted') {
+          console.log('[Retro Console] Permissão não concedida previamente. Requisitando autorização ao usuário...');
+          const reqStatus = await dirHandle.requestPermission({ mode: 'read' });
+          if (reqStatus !== 'granted') {
+            throw new Error(`Permissão de leitura negada para a pasta "${dirHandle.name}". Autorize o acesso para iniciar o jogo.`);
+          }
+        }
+        try {
+          console.log('[Retro Console] Abrindo handle do arquivo:', game.customName);
+          const fileHandle = await dirHandle.getFileHandle(game.customName);
+          const f = await fileHandle.getFile();
+          console.log('[Retro Console] Arquivo recuperado do HD com sucesso. Tamanho:', f.size, 'bytes');
+
+          // Passamos o File object f diretamente (evitando URL.createObjectURL para não gerar erro de ZIP "End of central directory not found")
+          romSource = f;
+          console.log('[Retro Console] File object físico atribuído com sucesso à romSource.');
+        } catch (fileErr: any) {
+          console.error('[Retro Console] Erro ao ler arquivo do HD local:', fileErr);
+          throw new Error(`Não foi possível ler o arquivo "${game.customName}" do seu HD. Verifique se ele ainda existe na pasta.`);
+        }
       }
 
-      console.log('[Retro Console] Inicializando emulador NES com:', selectedRom);
+      console.log(`[Retro Console] Inicializando Nostalgist [${consoleType.toUpperCase()}] com core [${selectedCore}]. RomSource:`, romSource);
 
-      // Instanciação central da biblioteca Nostalgist configurada para NES (Core fceumm por padrão)
-      const instance = await Nostalgist.nes({
+      // Instanciação dinâmica usando a API .launch de Nostalgist para carregar qualquer core retro
+      const instance = await Nostalgist.launch({
+        core: selectedCore,
         rom: romSource,
         element: canvasRef.current,
         resolveCoreSource(core, ext) {
-          // Utiliza a rota de pacotes NPM do jsDelivr, que é muitíssimo mais rápida, estável e livre de rate leaks do que as APIs do GitHub
-          return `https://cdn.jsdelivr.net/npm/nostalgist/cores/${core}.${ext}`;
+          const coreUrl = `https://cdn.jsdelivr.net/gh/leizongmin/nostalgist/cores/${core}.${ext}`;
+          console.log(`[Retro Console] Baixando Wasm core de: ${coreUrl}`);
+          return coreUrl;
         },
         // Configurações personalizadas do emulador
         retroarchConfig: {
@@ -449,6 +1205,8 @@ export default function App() {
           input_player1_b: 'z',
           input_player1_y: 'a',
           input_player1_x: 's',
+          input_player1_l: 'q',
+          input_player1_r: 'w',
           input_player1_start: 'enter',
           input_player1_select: 'rshift',
           input_player1_up: 'up',
@@ -466,9 +1224,14 @@ export default function App() {
           input_player2_down: 'k',
           input_player2_left: 'j',
           input_player2_right: 'l',
+          // Otimizações de desempenho para cores mais pesados como N64
+          video_vsync: true,
+          video_threaded_video: true,
+          video_frame_delay: 0,
         }
       });
 
+      console.log('[Retro Console] Nostalgist.launch retornou uma instância com sucesso.');
       nostalgistInstance.current = instance;
       setIsEmulatorActive(true);
       setEmulatorStateText('Executando jogo');
@@ -477,22 +1240,32 @@ export default function App() {
       canvasRef.current.focus();
 
     } catch (error) {
-      console.error('[Retro Console] Falha crônica ao abrir emulador:', error);
+      console.error('[Retro Console] FALHA CRÔNICA ao abrir ou executar emulador:', error);
       setEmulatorStateText('Erro de Inicialização');
-      alert('Erro ao carregar o emulador de NES. Verifique se o arquivo está correto.');
+      const getConsoleName = (type: string) => {
+        if (type === 'megadrive') return 'Mega Drive';
+        if (type === 'sms') return 'Master System';
+        if (type === 'gba') return 'Game Boy Advance';
+        if (type === 'gbc') return 'Game Boy Color';
+        if (type === 'n64') return 'Nintendo 64';
+        return 'NES';
+      };
+      alert(`Erro ao carregar o emulador de ${getConsoleName(consoleType)}. Verifique se o arquivo está correto.`);
     } finally {
       setIsEmulatorLoading(false);
     }
   };
 
   // Desativação segura do emulador
-  const handlePowerOff = () => {
+  const handlePowerOff = async () => {
     if (!isEmulatorActive || !nostalgistInstance.current) return;
 
     audio.playBeep();
+    console.log('[Retro Console] Desligando console e encerrando instância...');
     try {
-      // Método seguro de fechamento e liberação de cache
-      nostalgistInstance.current.exit({ removeCanvas: false });
+      // Método seguro de fechamento e liberação de cache com await
+      await nostalgistInstance.current.exit({ removeCanvas: false });
+      console.log('[Retro Console] Instância anterior destruída com sucesso.');
     } catch (err) {
       console.warn('Erro controlado ao desligar console:', err);
     }
@@ -512,19 +1285,83 @@ export default function App() {
     }
   };
 
-  // Carrega ROM customizada inserida pelo usuário via Drag and Drop ou seletor de arquivos
+  // Carrega ROM customizada inserida pelo usuário e sintoniza na estante de locadora
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files[0]) {
       const file = files[0];
-      if (!file.name.endsWith('.nes')) {
-        alert('Por favor, faça upload de um arquivo com extensão válida (.nes) compatível com Nintendinho.');
+      const nameLower = file.name.toLowerCase();
+      const isValid = nameLower.endsWith('.nes') || nameLower.endsWith('.md') || nameLower.endsWith('.bin') || nameLower.endsWith('.sms') || nameLower.endsWith('.gba') || nameLower.endsWith('.gbc') || nameLower.endsWith('.gb') || nameLower.endsWith('.n64') || nameLower.endsWith('.z64');
+      if (!isValid) {
+        alert('Por favor, faça upload de um arquivo com extensão válida (.nes, .md, .bin, .sms, .gba, .gbc, .gb, .n64 ou .z64).');
         return;
       }
-      setCustomRomName(file.name);
-      setCustomRomBlob(file);
-      setSelectedRom('custom');
+
+      const cleanTitle = file.name.replace(/\.[^/.]+$/, ""); // Remove extensão
+      const fileConsole = getConsoleTypeAndCore(file.name).console as 'nes' | 'megadrive' | 'sms' | 'gba' | 'gbc' | 'n64';
+
+      // Se o arquivo contendo EXATAMENTE o mesmo nome já estiver na estante, nós atualizamos seu conteúdo no IndexedDB e no estado.
+      const existingGame = games.find(g => g.customName === file.name);
+      const uniqueId = `custom-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const targetId = existingGame ? existingGame.id : uniqueId;
+
+      // Registra dinamicamente na lista da estante
+      const newCustomCartridge: Cartucho = {
+        id: targetId,
+        title: cleanTitle,
+        console: fileConsole,
+        url: 'custom',
+        coverUrl: '', // Força a renderização do cartucho genérico retro com o título impresso
+        customBlob: file,
+        customName: file.name
+      };
+
+      // Salva no IndexedDB de forma persistente
+      const dbRom: StoredRom = {
+        id: targetId,
+        nome: file.name,
+        tipo: fileConsole,
+        data: file
+      };
+
+      saveRomToIndexedDB(dbRom).catch(err => {
+        console.error('Erro ao persistir ROM no IndexedDB:', err);
+      });
+
+      setGames(prev => {
+        const alreadyExists = prev.some(g => g.customName === file.name);
+        if (alreadyExists) {
+          return prev.map(g => g.customName === file.name ? { 
+            ...g, 
+            customBlob: file, 
+            title: cleanTitle,
+            console: fileConsole 
+          } : g);
+        }
+        return [...prev, newCustomCartridge];
+      });
+
+      setSelectedRom(targetId);
       audio.playBeep();
+
+      const { layout } = getConsoleTypeAndCore(file.name);
+      setControllerLayout(layout);
+
+      if (socketRef.current && socketRef.current.connected) {
+        socketRef.current.emit('change-layout', layout);
+        socketRef.current.emit('change-layout', { layout });
+        socketRef.current.emit('layout-change', layout);
+        socketRef.current.emit('layout-change', { layout });
+        socketRef.current.emit('change_layout', { layout });
+      }
+
+      setToast({
+        message: `"${cleanTitle}" adicionado à estante!`,
+        type: 'success'
+      });
+
+      // Limpa para permitir re-upload se desejado
+      e.target.value = '';
     }
   };
 
@@ -542,6 +1379,63 @@ export default function App() {
   return (
     <div className="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between selection:bg-orange-600 selection:text-white font-tech antialiased">
       
+      {/* Toast Notification HUD */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-50 animate-bounce duration-300 pointer-events-none">
+          <div className={`flex items-center gap-2.5 px-4 py-3 rounded-lg border shadow-xl shadow-black font-pixel text-[10px] uppercase tracking-wide text-white ${
+            toast.type === 'error' 
+              ? 'bg-red-950/95 border-red-500 text-red-100' 
+              : toast.type === 'success'
+              ? 'bg-emerald-950/95 border-emerald-500 text-emerald-100'
+              : 'bg-orange-950/95 border-orange-500 text-orange-100'
+          }`}>
+            <AlertTriangle className="w-4 h-4 animate-pulse flex-shrink-0" />
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Retro Arcade Confirmation Overlay */}
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-red-500 rounded-2xl max-w-sm w-full p-6 shadow-2xl relative overflow-hidden font-mono text-center">
+            {/* Scanlines / Retro background effect */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.1)_0%,transparent_100%)] pointer-events-none"></div>
+            
+            <div className="bg-red-500/15 p-3 rounded-full text-red-500 w-fit mx-auto mb-4 border border-red-500/20">
+              <Trash2 className="w-8 h-8" />
+            </div>
+
+            <h3 className="text-sm font-bold uppercase font-pixel tracking-wider text-red-500 mb-2">
+              Remover Jogo?
+            </h3>
+            
+            <p className="text-xs text-slate-300 mb-6 leading-relaxed">
+              Você deseja remover o jogo <span className="text-orange-400 font-pixel font-bold">"{confirmDelete.title}"</span> da estante de sua locadora virtual?
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => {
+                  audio.playBeep();
+                  setConfirmDelete(null);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-bold font-pixel text-[10px] rounded-lg transition-colors cursor-pointer"
+              >
+                CANCELAR
+              </button>
+              
+              <button
+                onClick={confirmarRemocao}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 hover:scale-102 border border-red-500 text-white font-bold font-pixel text-[10px] rounded-lg transition-transform cursor-pointer shadow-md shadow-red-950"
+              >
+                SIM, REMOVER
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* HEADER DE CABINE retro_console */}
       <header className="w-full max-w-6xl mx-auto flex flex-col sm:flex-row justify-between items-center py-4 px-6 border-b border-orange-500/10 gap-4 mt-2">
         <div className="flex items-center gap-3">
@@ -549,7 +1443,9 @@ export default function App() {
             🕹️
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500 font-pixel">NEVO CONSOLE NES</h1>
+            <h1 className="text-lg font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-red-500 font-pixel">
+              NEVO CONSOLE {controllerLayout === 'megadrive_3' ? 'MEGA DRIVE' : 'NES'}
+            </h1>
             <p className="text-xs text-slate-400 font-mono">MVP RETRO EMULATION & REAL-TIME SOCKETS INTEGRATION</p>
           </div>
         </div>
@@ -779,55 +1675,260 @@ export default function App() {
             </div>
           </div>
 
-          {/* Card Seletor de Jogos ROM */}
-          <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-5 relative">
-            <h4 className="font-bold text-slate-200 uppercase font-pixel tracking-wider text-[10px] text-orange-500 mb-3 flex items-center gap-1.5">
-              💾 Cartucho Rom NES
-            </h4>
+          {/* Card Seletor de Jogos ROM -> ESTANTE DE LOCADORA VIRTUAL */}
+          <div className="bg-slate-900 border border-orange-500/10 rounded-2xl p-5 relative shadow-2xl overflow-hidden flex flex-col">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 rounded-full blur-3xl pointer-events-none"></div>
             
-            <div className="space-y-3 font-mono text-xs">
-              
-              {/* Opções prontas de ROM e Upload local */}
-              <div>
-                <label className="block text-slate-400 mb-1">Selecione o Cartucho:</label>
-                <select 
-                  value={selectedRom}
-                  onChange={(e) => {
-                    setSelectedRom(e.target.value);
-                    audio.playBeep();
-                  }}
-                  className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-slate-200 outline-none text-xs focus:border-orange-500/50"
-                  id="rom-select"
-                >
-                  <option value="/roms/megaman2.nes">ROM de Teste (Mega Man 2 Lite)</option>
-                  {customRomBlob && (
-                    <option value="custom">ROM Customizada: {customRomName}</option>
-                  )}
-                  <option value="https://github.com/christopherpow/nes-test-roms/raw/master/other/nestest.nes">
-                    ROM de Teste (CPU Nestest) [Web URL]
-                  </option>
-                </select>
+            <h4 className="font-bold text-slate-200 uppercase font-pixel tracking-wider text-[10px] text-orange-500 mb-1 flex items-center gap-1.5">
+              📼 Estante de Locadora Virtual
+            </h4>
+            <p className="text-[10px] text-slate-400 font-mono mb-4 leading-relaxed">
+              Arraste horizontalmente ou use <kbd className="bg-slate-950 px-1 py-0.5 rounded border border-slate-800 text-orange-400">←</kbd> <kbd className="bg-slate-950 px-1 py-0.5 rounded border border-slate-800 text-orange-400">→</kbd> no teclado ou D-Pad do celular para navegar!
+            </p>
+
+            {/* A PRATELEIRA DA LOCADORA (FLEX CONTAINER SCROLLABLE) */}
+            <div className="bg-gradient-to-b from-slate-950 to-slate-900 border border-slate-950 rounded-2xl p-4 shadow-inner relative flex flex-col gap-1">
+              <div 
+                className="flex overflow-x-auto gap-5 pb-5 pt-3 px-2 scrollbar-thin select-none snap-x"
+                style={{ scrollbarWidth: 'thin' }}
+              >
+                {games.length === 0 ? (
+                  <div className="w-full py-8 text-center text-slate-400 font-pixel text-xs flex flex-col items-center justify-center gap-2">
+                    <span className="text-orange-500">📭 Estante Vazia!</span>
+                    <span className="text-[9px] font-mono text-slate-500 max-w-xs leading-normal">
+                      Nenhum jogo na locadora. Faça upload de arquivos .sms, .nes, .md, .bin, .gba, .gbc, .gb, .n64 ou .z64 no seletor abaixo para adicionar!
+                    </span>
+                  </div>
+                ) : (
+                  games.map((game) => {
+                    const isSelected = selectedRom === game.id;
+                    
+                    return (
+                      <div
+                        key={game.id}
+                        onClick={() => selectGame(game.id)}
+                        className="flex-none w-[110px] snap-center cursor-pointer transition-all duration-300 relative group flex flex-col items-center"
+                        id={`cartridge-${game.id}`}
+                      >
+                        {/* Botão de Remover Jogo (Estilo Ícone de Lixeira Miniatura Retro) */}
+                        <button
+                          onClick={(e) => handleRemoveClick(game.id, e)}
+                          className="absolute -top-1.5 -right-1 z-30 bg-red-600 hover:bg-red-500 hover:scale-110 active:scale-95 text-white rounded-full p-1 border border-red-500 shadow-md shadow-black transition-all duration-200 opacity-90 md:opacity-0 md:group-hover:opacity-100"
+                          title="Remover Jogo da Locadora"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+
+                        {/* CARTUCHO FISICO ESTILO RETRO */}
+                      <div 
+                        className={`w-full aspect-[2/3] rounded-lg relative overflow-hidden transition-all duration-300 transform flex flex-col ${
+                          isSelected 
+                            ? 'scale-105 -translate-y-2 ring-2 ring-orange-500 shadow-[0_10px_20px_rgba(249,115,22,0.25)]' 
+                            : 'opacity-70 hover:opacity-100 hover:scale-[1.02] shadow-md shadow-black'
+                        }`}
+                        style={{
+                          background: game.console === 'nes'
+                            ? 'linear-gradient(135deg, #374151 0%, #111827 100%)' // NES Dark Grey plastic
+                            : game.console === 'sms'
+                            ? 'linear-gradient(135deg, #2563eb 0%, #0f172a 100%)' // SMS Dark Blue plastic
+                            : game.console === 'gba'
+                            ? 'linear-gradient(135deg, #0d9488 0%, #0b1510 100%)' // GBA Dark Teal plastic
+                            : game.console === 'gbc'
+                            ? 'linear-gradient(135deg, #7c3aed 0%, #1e0b36 100%)' // GBC Grape Purple
+                            : 'linear-gradient(135deg, #1f2937 0%, #030712 100%)' // MegaDrive Carbon black
+                        }}
+                      >
+                        {/* Clip e Saliências de Plástico do Cartucho */}
+                        <div className="w-full h-1.5 bg-black/40 flex justify-between px-2 gap-1 shrink-0">
+                          <span className="w-2 h-0.5 bg-black/80 rounded"></span>
+                          <span className="w-4 h-0.5 bg-black/80 rounded"></span>
+                          <span className="w-2 h-0.5 bg-black/80 rounded"></span>
+                        </div>
+
+                        {/* Console Badge Header */}
+                        <div className={`w-full text-[7px] font-pixel text-center py-0.5 text-white select-none ${
+                          game.console === 'nes' ? 'bg-red-600' :
+                          game.console === 'sms' ? 'bg-blue-500' :
+                          game.console === 'gba' ? 'bg-teal-600' :
+                          game.console === 'gbc' ? 'bg-purple-600' : 'bg-indigo-600'
+                        }`}>
+                          {game.console === 'nes' ? 'NES SYSTEM' :
+                           game.console === 'sms' ? 'MASTER SYS' :
+                           game.console === 'gba' ? 'GAMEBOY ADV' :
+                           game.console === 'gbc' ? 'GAMEBOY CLR' : 'GENESIS MD'}
+                        </div>
+
+                        {/* Adesivo / Cover Art do Cartucho */}
+                        <div className="flex-1 m-1.5 rounded bg-slate-950 overflow-hidden relative border border-slate-900 flex flex-col justify-between">
+                          {game.coverUrl ? (
+                            <img 
+                              src={game.coverUrl} 
+                              alt={game.title} 
+                              className="w-full h-full object-cover select-none pointer-events-none" 
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            /* Cartucho Genérico Placeholder */
+                            <div className="w-full h-full bg-gradient-to-br from-slate-900 to-slate-950 flex flex-col justify-between p-2 text-center relative select-none">
+                              {/* Console Lines background inside slot */}
+                              <div className="absolute inset-0 bg-slate-900/40 opacity-15"></div>
+                              <span className={`text-[8px] font-pixel px-1 py-0.5 rounded leading-none max-w-[90%] mx-auto ${
+                                game.console === 'nes' ? 'bg-red-600/30 text-red-400' :
+                                game.console === 'sms' ? 'bg-blue-600/30 text-blue-400' :
+                                game.console === 'gba' ? 'bg-teal-600/30 text-teal-400' :
+                                game.console === 'gbc' ? 'bg-purple-600/30 text-purple-400' :
+                                'bg-indigo-600/30 text-indigo-400'
+                              }`}>
+                                {game.console === 'nes' ? 'NES v.1' :
+                                 game.console === 'sms' ? 'SMS v.1' :
+                                 game.console === 'gba' ? 'GBA v.1' :
+                                 game.console === 'gbc' ? 'GBC v.1' :
+                                 'MD v.1'}
+                              </span>
+                              
+                              <p className="text-[9px] font-mono leading-[1.1] text-orange-400 font-bold break-words line-clamp-3 select-none">
+                                {game.title}
+                              </p>
+
+                              <p className="text-[7px] font-pixel text-slate-500 select-none">
+                                CUSTOM ROM
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Faixa decorativa vintage */}
+                          {game.coverUrl && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/80 text-[8px] text-orange-400 font-mono py-0.5 px-0.5 truncate text-center">
+                              {game.title}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Rebaixo inferior do chip */}
+                        <div className="h-2 w-full bg-slate-900 border-t border-slate-950 flex items-center justify-center shrink-0">
+                          <div className="w-4/5 h-0.5 bg-yellow-600/60 rounded"></div>
+                        </div>
+                      </div>
+
+                      {/* Nome do Jogo & Console Badge no Rodapé */}
+                      <p className={`mt-2.5 text-[10px] font-pixel text-center leading-tight truncate w-full ${
+                        isSelected ? 'text-orange-400 font-bold' : 'text-slate-400 group-hover:text-slate-200'
+                      }`}>
+                        {game.title}
+                      </p>
+                      
+                      <span className={`text-[7px] font-pixel mt-1 px-1.5 rounded-sm uppercase tracking-tight py-0.5 ${
+                        game.console === 'nes' ? 'bg-red-950/40 text-red-400 border border-red-900/30' :
+                        game.console === 'sms' ? 'bg-blue-950/40 text-blue-400 border border-blue-900/30' :
+                        game.console === 'gba' ? 'bg-teal-950/40 text-teal-400 border border-teal-900/30' : 
+                        game.console === 'gbc' ? 'bg-purple-950/40 text-purple-400 border border-purple-900/30' :
+                        game.console === 'n64' ? 'bg-amber-950/40 text-amber-400 border border-amber-900/30' :
+                        'bg-indigo-950/40 text-indigo-400 border border-indigo-900/30'
+                      }`}>
+                        {game.console === 'megadrive' ? 'megadrive' : game.console}
+                      </span>
+
+                      {/* Indicador triangular de item selecionado */}
+                      {isSelected && (
+                        <div className="absolute -top-3 text-orange-500 text-xs animate-bounce">
+                          ▼
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
               </div>
 
-              {/* Botão de Upload de cartucho local .nes */}
-              <div className="pt-2">
-                <input 
-                  type="file" 
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  accept=".nes"
-                  className="hidden"
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2 bg-slate-950 hover:bg-slate-900 border border-dashed border-slate-800 text-slate-400 rounded hover:text-slate-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-xs"
-                  id="btn-upload-rom"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Carregar ROM local (.nes)
-                </button>
+              {/* Wooden Shelf Plate Design */}
+              <div className="h-2 w-full bg-gradient-to-r from-amber-900 via-amber-800 to-amber-900 rounded-b border-t border-amber-900/30 shadow-[0_4px_10px_black] relative z-10 flex items-center justify-between px-3">
+                <span className="w-1.5 h-1 bg-amber-950 rounded-full"></span>
+                <span className="w-1.5 h-1 bg-amber-950 rounded-full"></span>
+              </div>
+            </div>
+
+            {/* Botão de Upload de cartucho local .nes, .md, .bin, .sms, .gba, .gbc, .gb */}
+            <div className="mt-3">
+              <input 
+                type="file" 
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".nes,.md,.bin,.sms,.gba,.gbc,.gb,.n64,.z64"
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-2 bg-slate-950 hover:bg-slate-900 border border-dashed border-slate-800 text-slate-400 rounded hover:text-orange-400 transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-xs font-mono font-bold"
+                id="btn-upload-rom"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Carregar ROM local (.nes, .md, .bin, .sms, .gba, .gbc, .gb, .n64, .z64)
+              </button>
+            </div>
+
+            {/* Seção da Galeria Local (File System Access API & Directory Folder) */}
+            <div className="mt-3 pt-3 border-t border-slate-900/60 flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-pixel text-slate-400 flex items-center gap-1 uppercase">
+                  <FolderOpen className="w-3.5 h-3.5 text-orange-500" />
+                  Pasta de Jogos (Híbrida)
+                </span>
+                {directoryName && (typeof window !== 'undefined' && 'showDirectoryPicker' in window) && (
+                  <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-950/50 text-emerald-400 border border-emerald-500/10 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Vinculada: {directoryName}
+                  </span>
+                )}
               </div>
 
+              {(typeof window !== 'undefined' && 'showDirectoryPicker' in window) ? (
+                <>
+                  {needsDirectoryPermission ? (
+                    <div className="p-3 rounded-lg bg-orange-950/20 border border-orange-500/20 flex flex-col gap-2 text-center">
+                      <p className="text-[10px] text-orange-400 font-mono leading-normal">
+                        A pasta vinculada foi salva, mas precisa de permissão de leitura temporária para reativar os jogos no navegador.
+                      </p>
+                      <button
+                        onClick={handleRequestDirectoryPermission}
+                        className="w-full py-1.5 px-3 bg-orange-500/10 border border-orange-500 text-orange-400 rounded hover:bg-orange-600 hover:text-black font-pixel text-[9px] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Unlock className="w-3 h-3" />
+                        AUTORIZAR ACESSO
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleLinkDirectory}
+                      className="flex-1 py-2 bg-slate-950 hover:bg-slate-900 border border-dashed border-slate-800 text-slate-400 rounded hover:text-orange-400 transition-colors flex items-center justify-center gap-1.5 cursor-pointer text-[11px] font-mono font-bold"
+                      title="Selecione uma pasta com seus jogos (.nes, .md, .sms, .gba) para jogar direto do HD sem upload!"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                      {directoryName ? 'Alterar Pasta' : 'Vincular Pasta'}
+                    </button>
+
+                    {directoryName && (
+                      <button
+                        onClick={handleUnlinkDirectory}
+                        className="py-2 px-3 bg-red-950/40 hover:bg-red-900 border border-red-950 text-red-400 rounded hover:text-red-300 transition-colors flex items-center justify-center gap-1 cursor-pointer text-[11px] font-mono font-bold"
+                        title="Desvincular pasta de jogos de forma permanente"
+                      >
+                        <FolderMinus className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="p-3 rounded-lg bg-slate-950/40 border border-slate-900 text-slate-400 font-mono text-[9px] leading-relaxed relative overflow-hidden select-none">
+                  <div className="absolute top-0 right-0 w-8 h-8 bg-sky-500/5 rounded-full blur"></div>
+                  <span className="text-orange-400 font-pixel font-bold block mb-1">ℹ️ Modo Híbrido Ativo:</span>
+                  Leitura direta de diretórios físicos não é suportada neste navegador (Firefox/Safari/Mobile).
+                  <span className="text-slate-200 block mt-1.5">
+                    Não se preocupe! A sua estante de salvamento persistente funciona <strong className="text-orange-400">100% via IndexedDB</strong>. Use o botão <strong>Carregar ROM local</strong> acima e seus jogos ficarão salvos no navegador para você jogar após o F5!
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

@@ -167,6 +167,21 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Repassa sinal de mudança de layout do Console TV para todos os controles sintonizados na sala
+  socket.on('change-layout', (data) => {
+    if (socket.roomCode && socket.role === 'tv') {
+      socket.to(socket.roomCode).emit('change-layout', data);
+      console.log(`[Layout] TV alterou o layout da sala ${socket.roomCode} para: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+    }
+  });
+
+  socket.on('layout-change', (data) => {
+    if (socket.roomCode && socket.role === 'tv') {
+      socket.to(socket.roomCode).emit('layout-change', data);
+      console.log(`[Layout] TV alterou o layout da sala ${socket.roomCode} para: ${typeof data === 'string' ? data : JSON.stringify(data)}`);
+    }
+  });
+
   // Limpeza de recursos ao desconectar um usuário
   socket.on('disconnect', () => {
     console.log(`[Socket] Desconectado: ${socket.id}`);
