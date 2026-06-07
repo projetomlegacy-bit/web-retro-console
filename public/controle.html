@@ -29,12 +29,6 @@
             -webkit-user-select: none;
             touch-action: none;
         }
-        /* Botão D-pad circular e d-pad de setas */
-        .dpad-cross {
-            position: relative;
-            width: 150px;
-            height: 150px;
-        }
         /* Elementos da fenda do controle clássico */
         .speaker-grill {
             background: repeating-linear-gradient(
@@ -47,125 +41,124 @@
         }
     </style>
 </head>
-<body class="bg-[#171717] text-neutral-100 h-screen flex flex-col justify-between font-tech p-4 md:p-6 select-none shadow-inner">
+<body class="bg-zinc-950 text-neutral-100 h-[100dvh] w-screen overflow-hidden flex flex-col justify-between p-4 box-border font-tech select-none shadow-inner relative">
 
     <!-- Seção Superior / LCD de Informação do Controle -->
-    <div class="w-full max-w-md mx-auto bg-neutral-800 rounded-2xl p-4 border-2 border-neutral-700 shadow-lg mt-2">
+    <div id="top-lcd-container" class="w-full max-w-md mx-auto bg-neutral-900 border border-neutral-800 rounded-2xl p-3 shadow-xl flex-none z-10">
         <!-- Placa decorativa de console -->
-        <div class="flex justify-between items-center px-1 mb-2">
-            <span class="text-xs tracking-widest font-bold text-neutral-400 font-pixel text-[8px] uppercase">🕹️ Retro Remote</span>
+        <div id="top-lcd-header" class="flex justify-between items-center px-1 mb-1.5 animate-pulse">
+            <span class="text-xs tracking-widest font-bold text-neutral-500 font-pixel text-[8px] uppercase">🕹️ Retro Remote</span>
             <!-- Indicador LED Físico -->
             <div class="flex items-center gap-1.5">
-                <span id="conn-led" class="w-2.5 h-2.5 rounded-full bg-red-600 animate-ping"></span>
-                <span id="conn-badge" class="text-[9px] font-pixel text-red-500 uppercase">Procurando</span>
+                <span id="conn-led" class="w-2 h-2 rounded-full bg-red-600 animate-ping"></span>
+                <span id="conn-badge" class="text-[8px] font-pixel text-red-500 uppercase font-bold">Procurando</span>
             </div>
         </div>
 
-        <!-- Tela LCD de Status Verde/Fósforo -->
-        <div class="bg-[#121c16] border-2 border-[#1c2e24] p-3 rounded-lg flex flex-col gap-1 items-stretch text-left shadow-inner text-[#4ade80]" style="min-height: 70px;">
-            <div class="flex justify-between font-mono text-xs border-b border-[#1c2e24] pb-1">
-                <span>JOSTICK TERMINAL</span>
-                <span id="lcd-ping">LATENCY: --</span>
+        <!-- Tela LCD de Status Verde/Fósforo compacta -->
+        <div id="lcd-status-box" class="bg-[#0b100d] border border-emerald-950/30 p-2.5 rounded-xl flex flex-col gap-1 items-stretch text-left shadow-inner text-[#4ade80]" style="min-height: 52px;">
+            <div class="flex justify-between font-mono text-[9px] border-b border-emerald-950/30 pb-0.5 opacity-80">
+                <span>JOYPAD TERMINAL</span>
+                <span id="lcd-ping" class="font-bold">LATENCY: --</span>
             </div>
-            <div class="text-[11px] font-mono mt-1 space-y-0.5" id="lcd-status">
+            <div class="text-[10px] font-mono mt-1 space-y-0.5 leading-tight" id="lcd-status">
                 <p class="animate-pulse">Aguardando inserção de código...</p>
             </div>
         </div>
     </div>
 
-    <!-- Seção de Login / Conexão Alternativa (Exibida apenas se não receber sala via URL query) -->
-    <div id="join-card" class="w-full max-w-sm mx-auto bg-neutral-900 rounded-2xl p-6 border border-neutral-800 text-center space-y-4 my-auto shadow-2xl z-20">
+    <!-- Seção de Login / Conexão Alternativa (Posicionamento absoluto para evitar empurrar o layout) -->
+    <div id="join-card" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-sm bg-neutral-900 rounded-2xl p-6 border border-neutral-800 text-center space-y-4 shadow-2xl z-30">
         <h2 class="text-lg font-bold text-orange-500 font-pixel text-xs sm:text-sm">PAREAR CONTROLE</h2>
-        <p class="text-xs text-neutral-400">Insira as 4 letras mostradas no canto superior direito da tela principal (TV):</p>
+        <p class="text-xs text-neutral-400 font-sans">Insira as 4 letras mostradas no canto superior direito do Console Retro na TV:</p>
         
         <div class="flex justify-center gap-2">
             <input type="text" id="room-input" maxlength="4" placeholder="ABCD" class="bg-neutral-950 border-2 border-neutral-800 text-white font-pixel text-center text-xl tracking-widest p-2 rounded-xl w-36 uppercase focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all">
         </div>
 
-        <button onclick="manuallyJoinRoom()" class="w-full bg-orange-600 hover:bg-orange-500 active:bg-orange-700 font-pixel text-[10px] py-3 text-white rounded-xl font-bold tracking-wider hover:scale-105 transition-transform">
+        <button onclick="manuallyJoinRoom()" class="w-full bg-orange-600 hover:bg-orange-500 active:bg-orange-700 font-pixel text-[10px] py-3 text-white rounded-xl font-bold tracking-wider hover:scale-105 transition-transform shadow-lg">
             CONECTAR CONSOLE
         </button>
     </div>
 
-    <!-- Seção do Gameplay Controller (Handheld Gameboy/NES Face) -->
-    <div id="controller-pad" class="w-full max-w-lg mx-auto flex flex-col gap-6 my-auto select-none opacity-40 pointer-events-none transition-all duration-300">
+    <!-- Seção do Gameplay Controller (Distribuição Lateral Perfeita) -->
+    <div id="controller-pad" class="w-full flex-1 flex flex-row justify-between items-center max-w-5xl mx-auto select-none opacity-40 pointer-events-none transition-all duration-300 relative px-4 md:px-8 gap-2">
         
-        <!-- Área Central das Teclas Físicas -->
-        <div class="flex justify-between items-center w-full px-4 lg:px-8 mt-4 gap-4">
-            
-            <!-- Direcionais D-Pad (Esquerda) -->
-            <div class="relative w-36 h-36 flex items-center justify-center">
-                <!-- Construindo D-Pad clássico em forma de cruz -->
-                <div class="w-32 h-32 rounded-full bg-[#1e1e1e] border-2 border-neutral-800 flex items-center justify-center shadow-lg relative">
-                    <!-- D-Pad Peça Vertical -->
-                    <div class="absolute w-9 h-28 bg-[#2d2d2d] rounded-md shadow-inner"></div>
-                    <!-- D-Pad Peça Horizontal -->
-                    <div class="absolute w-28 h-9 bg-[#2d2d2d] rounded-md shadow-inner"></div>
-                    <!-- Centro do dpad -->
-                    <div class="absolute w-9 h-9 bg-[#171717] rounded-full z-10 shadow-md"></div>
+        <!-- COLUNA ESQUERDA: D-Pad Direcional -->
+        <div class="pointer-events-auto flex items-center justify-center">
+            <div class="relative w-32 h-32 sm:w-36 sm:h-36 flex items-center justify-center shrink-0">
+                <!-- Fundo circular clássico do D-Pad com sombra real -->
+                <div class="w-full h-full rounded-full bg-gradient-to-tr from-[#151515] via-[#242424] to-[#3a3a3a] border-4 border-neutral-900 flex items-center justify-center shadow-2xl relative">
+                    <!-- Peça D-pad Cruz Vertical -->
+                    <div class="absolute w-[30%] h-[92%] bg-gradient-to-b from-[#2e2e2e] to-[#1e1e1e] rounded-md shadow-inner border-y border-neutral-800"></div>
+                    <!-- Peça D-pad Cruz Horizontal -->
+                    <div class="absolute w-[92%] h-[30%] bg-gradient-to-r from-[#2e2e2e] to-[#1e1e1e] rounded-md shadow-inner border-x border-neutral-800"></div>
+                    <!-- Centro circular do d-pad -->
+                    <div class="absolute w-[32%] h-[32%] bg-[#151515] rounded-full z-10 shadow-md border border-neutral-800"></div>
                     
-                    <!-- Botões de Toque invisíveis estendidos para precisão do dedão (Melhora usabilidade) -->
+                    <!-- Sensores Invisíveis Maiores de Alta Sensibilidade -->
                     <!-- Seta Cima -->
-                    <div id="btn-up" class="absolute top-0 left-1/2 -translate-x-1/2 w-12 h-11 z-20 text-neutral-500 flex justify-center items-start pt-1 cursor-pointer select-none active:scale-95 transition-transform" data-key="up">
-                        <span class="text-sm select-none">▲</span>
+                    <div id="btn-up" class="absolute top-0 left-1/2 -translate-x-1/2 w-[34%] h-[38%] z-20 text-neutral-400 flex justify-center items-start pt-2 cursor-pointer select-none active:text-orange-500 transition-colors" data-key="up">
+                        <span class="text-xs sm:text-sm select-none font-bold">▲</span>
                     </div>
                     <!-- Seta Direita -->
-                    <div id="btn-right" class="absolute right-0 top-1/2 -translate-y-1/2 w-11 h-12 z-20 text-neutral-500 flex justify-end items-center pr-1.5 cursor-pointer select-none active:scale-95 transition-transform" data-key="right">
-                        <span class="text-sm select-none">▶</span>
+                    <div id="btn-right" class="absolute right-0 top-1/2 -translate-y-1/2 w-[38%] h-[34%] z-20 text-neutral-400 flex justify-end items-center pr-2 cursor-pointer select-none active:text-orange-500 transition-colors" data-key="right">
+                        <span class="text-xs sm:text-sm select-none font-bold">▶</span>
                     </div>
                     <!-- Seta Baixo -->
-                    <div id="btn-down" class="absolute bottom-0 left-1/2 -translate-x-1/2 w-12 h-11 z-20 text-neutral-500 flex justify-center items-end pb-1 cursor-pointer select-none active:scale-95 transition-transform" data-key="down">
-                        <span class="text-sm select-none">▼</span>
+                    <div id="btn-down" class="absolute bottom-0 left-1/2 -translate-x-1/2 w-[34%] h-[38%] z-20 text-neutral-400 flex justify-center items-end pb-2 cursor-pointer select-none active:text-orange-500 transition-colors" data-key="down">
+                        <span class="text-xs sm:text-sm select-none font-bold">▼</span>
                     </div>
                     <!-- Seta Esquerda -->
-                    <div id="btn-left" class="absolute left-0 top-1/2 -translate-y-1/2 w-11 h-12 z-20 text-neutral-500 flex justify-start items-center pl-1.5 cursor-pointer select-none active:scale-95 transition-transform" data-key="left">
-                        <span class="text-sm select-none">◀</span>
+                    <div id="btn-left" class="absolute left-0 top-1/2 -translate-y-1/2 w-[38%] h-[34%] z-20 text-neutral-400 flex justify-start items-center pl-2 cursor-pointer select-none active:text-orange-500 transition-colors" data-key="left">
+                        <span class="text-xs sm:text-sm select-none font-bold">◀</span>
                     </div>
                 </div>
             </div>
-
-            <!-- Botões de Ação Dinâmicos A/B (Direita) -->
-            <div class="flex items-center gap-4 bg-[#1f1f1f]/80 p-3 rounded-3xl border border-neutral-800 rotate-[-12deg] shadow-lg">
-                <!-- Botão B (Especial / Bomba - Azul/Roxo) -->
-                <div class="flex flex-col items-center gap-1.5">
-                    <button id="btn-b-action" class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-700 border-b-4 border-indigo-900 active:from-indigo-600 active:to-blue-700 active:border-b-0 cursor-pointer flex items-center justify-center font-pixel shadow-md hover:scale-105 transition-transform" style="touch-action: none;">
-                        <span class="text-white text-lg tracking-wider font-bold select-none rotate-[12deg]">B</span>
-                    </button>
-                    <span class="text-[9px] font-pixel text-neutral-400 rotate-[12deg]">BOMBA</span>
-                </div>
-
-                <!-- Botão A (Ação / Atirar / Confirmar - Vermelho) -->
-                <div class="flex flex-col items-center gap-1.5">
-                    <button id="btn-a-action" class="w-16 h-16 rounded-full bg-gradient-to-br from-red-500 to-orange-600 border-b-4 border-red-900 active:from-red-600 active:to-orange-700 active:border-b-0 cursor-pointer flex items-center justify-center font-pixel shadow-md hover:scale-105 transition-transform" style="touch-action: none;">
-                        <span class="text-white text-lg tracking-wider font-bold select-none rotate-[12deg]">A</span>
-                    </button>
-                    <span class="text-[9px] font-pixel text-neutral-400 rotate-[12deg]">TIRO</span>
-                </div>
-            </div>
-
         </div>
 
-        <!-- Botões Centrais (Select / Start) -->
-        <div class="flex justify-center gap-10 mt-2 mb-4">
+        <!-- BOTÕES AUXILIARES: Select e Start bem no centro inferior de forma absoluta -->
+        <div class="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto flex flex-row gap-4 shrink-0 justify-center items-center z-20">
             <!-- Select -->
-            <div class="flex flex-col items-center gap-1">
-                <button id="btn-select" class="w-14 h-4 bg-neutral-600 border border-neutral-700 rounded-full active:bg-neutral-700 shadow transform rotate-[-8deg] cursor-pointer" style="touch-action: none;"></button>
-                <span class="text-[8px] font-pixel text-neutral-500 uppercase tracking-widest text-center select-none">Select</span>
+            <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-transform">
+                <button id="btn-select" class="w-12 h-3.5 bg-neutral-700 border border-neutral-800 rounded-full active:bg-neutral-500 shadow-md transform rotate-[-8deg] cursor-pointer" style="touch-action: none;"></button>
+                <span class="text-[7px] font-pixel text-neutral-500 uppercase tracking-widest text-center select-none font-bold">Select</span>
             </div>
             <!-- Start -->
-            <div class="flex flex-col items-center gap-1">
-                <button id="btn-start" class="w-14 h-4 bg-neutral-600 border border-neutral-700 rounded-full active:bg-neutral-700 shadow transform rotate-[-8deg] cursor-pointer" style="touch-action: none;"></button>
-                <span class="text-[8px] font-pixel text-neutral-500 uppercase tracking-widest text-center select-none">Start</span>
+            <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-transform">
+                <button id="btn-start" class="w-12 h-3.5 bg-neutral-700 border border-neutral-800 rounded-full active:bg-neutral-500 shadow-md transform rotate-[-8deg] cursor-pointer" style="touch-action: none;"></button>
+                <span class="text-[7px] font-pixel text-neutral-500 uppercase tracking-widest text-center select-none font-bold">Start</span>
+            </div>
+        </div>
+
+        <!-- COLUNA DIREITA: Botões de Ação A/B Grandes -->
+        <div class="pointer-events-auto flex items-center justify-end">
+            <div class="flex items-center gap-4 bg-[#1a1a1a]/95 px-4 py-3 rounded-[32px] border border-neutral-800 shadow-2xl rotate-[-15deg]">
+                <!-- Botão B (Pular/Especial) -->
+                <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all">
+                    <button id="btn-b-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-850 border-b-4 border-indigo-900 active:from-indigo-600 active:to-blue-700 active:border-b-0 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
+                        <span class="text-white text-base tracking-wider font-bold select-none rotate-[15deg]">B</span>
+                    </button>
+                    <span class="text-[7px] font-pixel text-neutral-500 select-none rotate-[15deg] uppercase font-bold tracking-tight">PULAR</span>
+                </div>
+
+                <!-- Botão A (Atirar) -->
+                <div class="flex flex-col items-center gap-1 hover:scale-105 active:scale-95 transition-all">
+                    <button id="btn-a-action" class="w-14 h-14 rounded-full bg-gradient-to-br from-red-500 via-red-650 to-orange-600 border-b-4 border-red-900 active:from-red-600 active:to-orange-700 active:border-b-0 cursor-pointer flex items-center justify-center font-pixel shadow-lg transition-all" style="touch-action: none;">
+                        <span class="text-white text-base tracking-wider font-bold select-none rotate-[15deg]">A</span>
+                    </button>
+                    <span class="text-[7px] font-pixel text-neutral-500 select-none rotate-[15deg] uppercase font-bold tracking-tight">ATIRAR</span>
+                </div>
             </div>
         </div>
 
     </div>
 
-    <!-- Divisórias Plásticas / Alto Falantes Decorativo -->
-    <div class="w-full max-w-md mx-auto flex justify-between items-center py-2 px-6 border-t border-neutral-800">
-        <div class="speaker-grill w-20 h-6 rounded-lg opacity-30"></div>
-        <span class="text-[8px] font-mono tracking-widest text-neutral-600 select-none">MVP CONTROLLER UNIT</span>
-        <div class="speaker-grill w-20 h-6 rounded-lg opacity-30"></div>
+    <!-- Rodapé Decorativo (Discreto nos cantos para fins de sobriedade de design) -->
+    <div id="footer-decor" class="w-full max-w-md mx-auto flex justify-between items-center pb-1 px-6 border-t border-neutral-900/60 flex-none">
+        <div class="speaker-grill w-16 h-3 rounded-lg opacity-20"></div>
+        <span class="text-[8px] font-mono tracking-widest text-[#404040] select-none">RETRO JOYPAD UNIT</span>
+        <div class="speaker-grill w-16 h-3 rounded-lg opacity-20"></div>
     </div>
 
     <!-- Script de Configuração do Controle Remoto -->
